@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import AnalysisDashboard, {
   SingleAnalysisData,
 } from "./AnalysisDashboard";
@@ -51,6 +51,11 @@ export default function AppSearch() {
 
   const [showCategoryChips, setShowCategoryChips] = useState(false);
   const [activeCategory, setActiveCategory] = useState<string | null>(null);
+  // Tracks which category's fetch is the one that should be allowed to
+  // write its result — set synchronously on every click/toggle, so a
+  // response for a category that's no longer active (superseded by another
+  // click, or turned off) can detect that and bail out instead of applying.
+  const latestCategoryRequestRef = useRef<string | null>(null);
   const [categoryLoading, setCategoryLoading] = useState(false);
   const [categoryError, setCategoryError] = useState<string | null>(null);
   const [categoryResults, setCategoryResults] = useState<RankedApp[] | null>(
@@ -137,6 +142,17 @@ export default function AppSearch() {
   }
 
   async function handleCategoryClick(category: string) {
+    if (activeCategory === category) {
+      // Toggle off: close the ranking, but leave selectedApps untouched.
+      latestCategoryRequestRef.current = null;
+      setActiveCategory(null);
+      setCategoryLoading(false);
+      setCategoryError(null);
+      setCategoryResults(null);
+      return;
+    }
+
+    latestCategoryRequestRef.current = category;
     setActiveCategory(category);
     setCategoryLoading(true);
     setCategoryError(null);
@@ -148,6 +164,12 @@ export default function AppSearch() {
       );
       const data = await response.json();
 
+      // A different category was clicked (or this one was toggled off)
+      // before this request resolved — discard the now-stale result.
+      if (latestCategoryRequestRef.current !== category) {
+        return;
+      }
+
       if (!response.ok) {
         throw new Error(
           data?.error ?? `top-apps responded with status ${response.status}`
@@ -156,11 +178,16 @@ export default function AppSearch() {
 
       setCategoryResults(data.results);
     } catch {
+      if (latestCategoryRequestRef.current !== category) {
+        return;
+      }
       setCategoryError(
         "No se pudo cargar el top de esta categoría, intenta de nuevo"
       );
     } finally {
-      setCategoryLoading(false);
+      if (latestCategoryRequestRef.current === category) {
+        setCategoryLoading(false);
+      }
     }
   }
 
