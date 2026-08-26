@@ -37,8 +37,16 @@ export async function fetchReviews(
   country: string = "us",
   page: number = 1
 ): Promise<ReviewsResult> {
-  const countrySegment = country === "us" ? "" : `${country}/`;
-  const url = `https://itunes.apple.com/${countrySegment}rss/customerreviews/id=${trackId}/page=${page}/sortby=mostrecent/json`;
+  // Always include the country segment, even for "us". This used to be
+  // omitted for "us" as a micro-optimization; while investigating a
+  // separate issue (Apple rate-limiting this session's IP on this legacy
+  // RSS endpoint, causing feed.entry to come back empty for known-good
+  // trackIds), the /us/-prefixed URL was the more reliable of the two in
+  // side-by-side tests. That said, the rate-limiting itself was the
+  // dominant effect and made it hard to fully isolate whether the segment
+  // matters on its own — this is kept as the safer, more explicit form,
+  // not because the omission was proven to be the root cause.
+  const url = `https://itunes.apple.com/${country}/rss/customerreviews/id=${trackId}/page=${page}/sortby=mostrecent/json`;
 
   const response = await fetch(url);
 

@@ -7,9 +7,18 @@ const client = new Anthropic();
 
 const MAX_REVIEWS_SINGLE = 50;
 const MAX_REVIEWS_PER_APP_COMPARATIVE = 30;
+// Single-app mode only: below this, there's nothing to analyze at all.
 const MIN_REVIEWS_REQUIRED = 5;
 const MAX_APPS = 5;
 const LOW_VOLUME_RATIO_THRESHOLD = 0.3;
+// Comparative mode only: an app needs at least this many reviews to be
+// included in the comparison — apps with 0 reviews (nothing to say about
+// them) are excluded from the set sent to Claude, not from the whole
+// request.
+const MIN_REVIEWS_COMPARATIVE = 1;
+// Comparative mode only: included apps below this get flagged in
+// sample_warnings as low-confidence, but still enter the analysis.
+const LOW_REVIEW_THRESHOLD = 10;
 
 const registrarAnalisisTool: Anthropic.Tool = {
   name: "registrar_analisis",
@@ -162,8 +171,9 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  // Fetch reviews for every app up front, in input order, so a 502/422
-  // always reports the first problematic trackId deterministically.
+  // Fetch reviews for every app up front, in input order. This loop only
+  // handles the network-failure case (502) — how few reviews is "too few"
+  // depends on the mode (single vs. comparative), decided below.
   const reviewsByTrackId = new Map<number, ReviewsResult>();
   for (const trackId of trackIds) {
     let result: ReviewsResult;
@@ -176,15 +186,6 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    if (result.reviews.length < MIN_REVIEWS_REQUIRED) {
-      return NextResponse.json(
-        {
-          error: `La app ${trackId} no tiene suficientes reseñas para un análisis confiable`,
-        },
-        { status: 422 }
-      );
-    }
-
     reviewsByTrackId.set(trackId, result);
   }
 
@@ -194,6 +195,16 @@ export async function POST(request: NextRequest) {
   // ---------------------------------------------------------------------
   if (trackIds.length === 1) {
     const reviewsResult = reviewsByTrackId.get(trackIds[0])!;
+
+    if (reviewsResult.reviews.length < MIN_REVIEWS_REQUIRED) {
+      return NextResponse.json(
+        {
+          error: `La app ${trackIds[0]} no tiene suficientes reseñas para un análisis confiable`,
+        },
+        { status: 422 }
+      );
+    }
+
     const trimmedReviews = reviewsResult.reviews.slice(0, MAX_REVIEWS_SINGLE);
 
     const reviewsText = trimmedReviews
@@ -248,6 +259,8 @@ ${reviewsText}`;
   // ---------------------------------------------------------------------
   // Comparative mode — 2 to 5 apps.
   // ---------------------------------------------------------------------
+  // Resolve names FIRST — every error/warning below must refer to apps by
+  // name, never by raw trackId.
   let appNames: Map<number, string>;
   try {
     appNames = await lookupAppNames(trackIds);
@@ -258,22 +271,62 @@ ${reviewsText}`;
     );
   }
 
-  const appsData = trackIds.map((trackId) => {
+  const allAppsData = trackIds.map((trackId) => {
     const reviews = reviewsByTrackId.get(trackId)!.reviews;
-    const trimmedReviews = reviews.slice(0, MAX_REVIEWS_PER_APP_COMPARATIVE);
     const appName = appNames.get(trackId) ?? `App ${trackId}`;
-    return { trackId, appName, reviewCount: reviews.length, trimmedReviews };
+    return { trackId, appName, reviewCount: reviews.length, reviews };
   });
+
+  // Apps with 0 reviews have nothing to contribute — exclude them from the
+  // set sent to Claude rather than rejecting the whole comparison.
+  const excludedApps = allAppsData.filter((a) => a.reviewCount === 0);
+  const includedApps = allAppsData.filter(
+    (a) => a.reviewCount >= MIN_REVIEWS_COMPARATIVE
+  );
+
+  if (includedApps.length < 2) {
+    const excludedNames = excludedApps.map((a) => a.appName).join(", ");
+    return NextResponse.json(
+      {
+        error: `No quedaron suficientes apps con reseñas disponibles para comparar (se excluyó a ${excludedNames} por no tener reseñas).`,
+      },
+      { status: 422 }
+    );
+  }
+
+  const appsData = includedApps.map((a) => ({
+    trackId: a.trackId,
+    appName: a.appName,
+    reviewCount: a.reviewCount,
+    trimmedReviews: a.reviews.slice(0, MAX_REVIEWS_PER_APP_COMPARATIVE),
+  }));
 
   // Precompute sample-size warnings deterministically — comparing raw
   // reviewCount is exact arithmetic, not something to leave to the model.
+  // Two independent checks, but an app under LOW_REVIEW_THRESHOLD is
+  // *also* almost always under the ratio cutoff — only emit the more
+  // specific low-volume message in that case instead of stacking two
+  // near-duplicate warnings for the same app.
   const maxReviewCount = Math.max(...appsData.map((a) => a.reviewCount));
-  const sampleWarnings = appsData
-    .filter((a) => a.reviewCount < maxReviewCount * LOW_VOLUME_RATIO_THRESHOLD)
-    .map(
-      (a) =>
+  const sampleWarnings: string[] = [];
+
+  for (const a of appsData) {
+    if (a.reviewCount < LOW_REVIEW_THRESHOLD) {
+      sampleWarnings.push(
+        `${a.appName} tiene solo ${a.reviewCount} reseñas disponibles — su análisis es menos representativo y debe tomarse con cautela.`
+      );
+    } else if (a.reviewCount < maxReviewCount * LOW_VOLUME_RATIO_THRESHOLD) {
+      sampleWarnings.push(
         `${a.appName} tiene solo ${a.reviewCount} reseñas disponibles, muy por debajo de las ${maxReviewCount} de la app con más reseñas del set — sus resultados son menos representativos.`
+      );
+    }
+  }
+
+  for (const a of excludedApps) {
+    sampleWarnings.push(
+      `${a.appName} fue excluida de la comparación porque no tiene reseñas disponibles.`
     );
+  }
 
   const appsListText = appsData
     .map(
