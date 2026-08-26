@@ -14,12 +14,18 @@ export interface Differentiator {
   differentiator: string;
 }
 
+export interface Conclusion {
+  best_app: string;
+  reasoning: string;
+}
+
 export interface ComparativeAnalysisData {
   apps_analyzed: AppAnalyzed[];
   sample_warnings: string[];
   dimension_rankings: DimensionRanking[];
   category_wide_complaints: string[];
   differentiators: Differentiator[];
+  conclusion: Conclusion;
 }
 
 interface ComparativeDashboardProps {
@@ -40,7 +46,13 @@ export default function ComparativeDashboard({
     dimension_rankings,
     category_wide_complaints,
     differentiators,
+    conclusion,
   } = data;
+
+  const bestApp = apps_analyzed.find(
+    (app) => app.appName === conclusion.best_app
+  );
+  const bestAppArtwork = bestApp ? artworkByTrackId[bestApp.trackId] : undefined;
 
   // Associate each warning with every app it mentions; anything left over
   // doesn't match a known app name and falls back to a general note.
@@ -230,6 +242,29 @@ export default function ComparativeDashboard({
             </div>
           ))}
         </div>
+      </div>
+
+      {/* Conclusion — the closing verdict, styled to stand apart */}
+      <div className="rounded-lg border border-zinc-200 bg-zinc-50 p-4 dark:border-zinc-800 dark:bg-zinc-900">
+        <h3 className="mb-2 text-sm font-semibold text-zinc-900 dark:text-zinc-100">
+          Conclusión
+        </h3>
+        <div className="flex items-center gap-3">
+          {bestAppArtwork && (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={bestAppArtwork}
+              alt={conclusion.best_app}
+              className="h-10 w-10 flex-shrink-0 rounded-xl"
+            />
+          )}
+          <p className="text-base font-bold text-zinc-900 dark:text-zinc-100">
+            {conclusion.best_app}
+          </p>
+        </div>
+        <p className="mt-2 text-sm text-zinc-700 dark:text-zinc-300">
+          {conclusion.reasoning}
+        </p>
       </div>
     </div>
   );

@@ -107,6 +107,14 @@ const registrarAnalisisComparativoTool: Anthropic.Tool = {
           required: ["appName", "differentiator"],
         },
       },
+      conclusion: {
+        type: "object",
+        properties: {
+          best_app: { type: "string" },
+          reasoning: { type: "string" },
+        },
+        required: ["best_app", "reasoning"],
+      },
     },
     required: [
       "apps_analyzed",
@@ -114,6 +122,7 @@ const registrarAnalisisComparativoTool: Anthropic.Tool = {
       "dimension_rankings",
       "category_wide_complaints",
       "differentiators",
+      "conclusion",
     ],
   },
 };
@@ -296,7 +305,8 @@ Instrucciones:
 - En dimension_rankings, elige entre 3 y 4 dimensiones relevantes para este tipo de app (por ejemplo: estabilidad/bugs, catálogo o contenido, valor por precio, publicidad, soporte, facilidad de uso) y en cada dimensión ordena TODAS las ${appsData.length} apps del set de mejor a peor — no menciones solo a la ganadora.
 - category_wide_complaints debe incluir únicamente quejas que aparezcan en varias apps del set, no quejas específicas de una sola app.
 - sample_warnings: usa exactamente esta lista precalculada, sin modificarla ni inventar otras advertencias: ${JSON.stringify(sampleWarnings)}. Si la lista está vacía, deja sample_warnings como un array vacío.
-- Básate únicamente en lo que dicen las reseñas reales a continuación. No inventes quejas, diferenciadores ni rankings que no estén respaldados por el contenido.
+- conclusion: al final, elige UNA sola app como la mejor del set — best_app debe ser exactamente igual (carácter por carácter) a uno de los appName listados arriba, nunca una app inventada ni una combinación de varias. El reasoning debe ser una síntesis de lo que ya concluiste en dimension_rankings, category_wide_complaints y differentiators — no introduzcas criterios nuevos ni información que no se desprenda de esas secciones. Escríbelo en español, en 2 a 4 frases concretas, mencionando en qué dimensiones destaca la app elegida y por qué supera a las demás del set.
+- Básate únicamente en lo que dicen las reseñas reales a continuación. No inventes quejas, diferenciadores, rankings ni conclusiones que no estén respaldados por el contenido.
 
 ${reviewsBlocks}`;
 
@@ -304,7 +314,7 @@ ${reviewsBlocks}`;
   try {
     response = await client.messages.create({
       model: "claude-sonnet-5",
-      max_tokens: 3072,
+      max_tokens: 3584,
       tools: [registrarAnalisisComparativoTool],
       tool_choice: { type: "tool", name: "registrar_analisis_comparativo" },
       messages: [{ role: "user", content: promptText }],
