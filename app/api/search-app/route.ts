@@ -6,6 +6,7 @@ interface ITunesRawResult {
   artistName: string;
   artworkUrl100: string;
   primaryGenreName: string;
+  userRatingCount?: number;
 }
 
 interface ITunesSearchResponse {
@@ -19,6 +20,7 @@ interface SimplifiedApp {
   artistName: string;
   artworkUrl100: string;
   primaryGenreName: string;
+  userRatingCount: number;
 }
 
 export async function GET(request: NextRequest) {
@@ -61,6 +63,7 @@ export async function GET(request: NextRequest) {
     artistName: item.artistName,
     artworkUrl100: item.artworkUrl100,
     primaryGenreName: item.primaryGenreName,
+    userRatingCount: item.userRatingCount ?? 0,
   }));
 
   return NextResponse.json({ results });

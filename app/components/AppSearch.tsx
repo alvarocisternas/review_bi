@@ -7,6 +7,7 @@ import AnalysisDashboard, {
 import ComparativeDashboard, {
   ComparativeAnalysisData,
 } from "./ComparativeDashboard";
+import ApiErrorModal from "./ApiErrorModal";
 import { GENRE_IDS, GENRE_LABELS_ES } from "@/lib/genreIds";
 
 export interface App {
@@ -15,6 +16,7 @@ export interface App {
   artistName: string;
   artworkUrl100: string;
   primaryGenreName: string;
+  userRatingCount: number;
 }
 
 interface RankedApp {
@@ -35,6 +37,22 @@ const MIN_QUERY_LENGTH = 2;
 const DEBOUNCE_MS = 400;
 const MAX_SELECTED_APPS = 5;
 const CATEGORIES = Object.keys(GENRE_IDS);
+
+// userRatingCount counts star ratings, NOT written reviews — they're
+// different metrics. We only block adding an app when it's at (or near)
+// zero ratings, since that's the one case where it's a near-certainty
+// there's nothing written to analyze either (e.g. a just-launched app).
+// A deliberately conservative threshold: apps with a handful of ratings
+// might still have real reviews, so we don't want to penalize those.
+const MIN_RATINGS_TO_COMPARE = 1;
+
+const API_ERROR_MESSAGE =
+  "Existen problemas en la API que no podemos controlar. Inténtelo más tarde";
+
+type FetchApiResult<T> =
+  | { kind: "success"; data: T }
+  | { kind: "business"; message: string }
+  | { kind: "aborted" };
 
 export default function AppSearch() {
   const searchInputRef = useRef<HTMLInputElement>(null);
@@ -64,8 +82,62 @@ export default function AppSearch() {
     null
   );
 
+  // Global popup for infrastructure-level API failures — 5xx, network
+  // errors, or responses we can't parse/use. Business validation errors
+  // (400/422 with a known { error } message) never touch this; they keep
+  // showing inline via the per-section error states above.
+  const [apiError, setApiError] = useState<string | null>(null);
+
   const hasQuery = term.trim().length >= MIN_QUERY_LENGTH;
   const isMaxReached = selectedApps.length >= MAX_SELECTED_APPS;
+
+  // Centralized fetch wrapper used by every API call in this component, so
+  // the business-vs-infrastructure distinction is handled in exactly one
+  // place instead of being duplicated per handler:
+  //   - Network exception (fetch throws, not an abort) -> popup.
+  //   - Response body isn't valid JSON -> popup (nothing renderable).
+  //   - response.status >= 500 -> popup (an infra fault, regardless of body).
+  //   - response.ok === false with a well-formed { error: string } body
+  //     (our 400/422 business validation responses) -> returned to the
+  //     caller as "business", to render inline like today.
+  //   - Any other non-ok response (malformed 4xx body) -> popup, since
+  //     there's no usable message to show inline either.
+  //   - A caller-driven AbortController (e.g. the search debounce
+  //     cancelling a stale request on retype) -> "aborted", handled
+  //     silently by the caller, never the popup.
+  async function fetchApi<T>(
+    input: string,
+    init?: RequestInit
+  ): Promise<FetchApiResult<T> | null> {
+    let response: Response;
+    try {
+      response = await fetch(input, init);
+    } catch (err) {
+      if (err instanceof DOMException && err.name === "AbortError") {
+        return { kind: "aborted" };
+      }
+      setApiError(API_ERROR_MESSAGE);
+      return null;
+    }
+
+    let body: unknown;
+    try {
+      body = await response.json();
+    } catch {
+      setApiError(API_ERROR_MESSAGE);
+      return null;
+    }
+
+    if (!response.ok) {
+      if (response.status < 500 && isKnownErrorBody(body)) {
+        return { kind: "business", message: body.error };
+      }
+      setApiError(API_ERROR_MESSAGE);
+      return null;
+    }
+
+    return { kind: "success", data: body as T };
+  }
 
   function handleTermChange(value: string) {
     setTerm(value);
@@ -98,27 +170,26 @@ export default function AppSearch() {
     const timeoutId = setTimeout(async () => {
       setLoading(true);
       setError(null);
-      try {
-        const response = await fetch(
-          `/api/search-app?term=${encodeURIComponent(trimmed)}`,
-          { signal: controller.signal }
-        );
 
-        if (!response.ok) {
-          throw new Error(`search-app responded with status ${response.status}`);
-        }
+      const result = await fetchApi<{ results: App[] }>(
+        `/api/search-app?term=${encodeURIComponent(trimmed)}`,
+        { signal: controller.signal }
+      );
 
-        const data: { results: App[] } = await response.json();
-        setResults(data.results);
-      } catch (err) {
-        if (err instanceof DOMException && err.name === "AbortError") {
-          return;
-        }
-        setError("Hubo un problema buscando apps, intenta de nuevo");
-        setResults([]);
-      } finally {
+      if (!result || result.kind === "aborted") {
+        // Either the popup already fired (infra failure), or this request
+        // was cancelled because the user kept typing — nothing to show.
         setLoading(false);
+        return;
       }
+
+      if (result.kind === "business") {
+        setError(result.message);
+        setResults([]);
+      } else {
+        setResults(result.data.results);
+      }
+      setLoading(false);
     }, DEBOUNCE_MS);
 
     return () => {
@@ -128,6 +199,12 @@ export default function AppSearch() {
   }, [term]);
 
   function handleAdd(app: App) {
+    if (app.userRatingCount < MIN_RATINGS_TO_COMPARE) {
+      // Defense in depth — the UI already hides/disables "Agregar" for
+      // these, but never silently add an app with no ratings/reviews.
+      return;
+    }
+
     setSelectedApps((prev) => {
       if (prev.some((selected) => selected.trackId === app.trackId)) {
         return prev;
@@ -160,37 +237,25 @@ export default function AppSearch() {
     setCategoryError(null);
     setCategoryResults(null);
 
-    try {
-      const response = await fetch(
-        `/api/top-apps?genre=${encodeURIComponent(category)}`
-      );
-      const data = await response.json();
+    const result = await fetchApi<{ results: RankedApp[] }>(
+      `/api/top-apps?genre=${encodeURIComponent(category)}`
+    );
 
-      // A different category was clicked (or this one was toggled off)
-      // before this request resolved — discard the now-stale result.
-      if (latestCategoryRequestRef.current !== category) {
-        return;
-      }
-
-      if (!response.ok) {
-        throw new Error(
-          data?.error ?? `top-apps responded with status ${response.status}`
-        );
-      }
-
-      setCategoryResults(data.results);
-    } catch {
-      if (latestCategoryRequestRef.current !== category) {
-        return;
-      }
-      setCategoryError(
-        "No se pudo cargar el top de esta categoría, intenta de nuevo"
-      );
-    } finally {
-      if (latestCategoryRequestRef.current === category) {
-        setCategoryLoading(false);
-      }
+    // A different category was clicked (or this one was toggled off)
+    // before this request resolved — discard the now-stale result.
+    if (latestCategoryRequestRef.current !== category) {
+      return;
     }
+
+    if (result?.kind === "success") {
+      setCategoryResults(result.data.results);
+    } else if (result?.kind === "business") {
+      setCategoryError(result.message);
+    }
+    // Otherwise: the popup already fired (infra failure) — nothing more to
+    // show in this section.
+
+    setCategoryLoading(false);
   }
 
   async function handleAnalyze() {
@@ -198,33 +263,22 @@ export default function AppSearch() {
     setAnalysisError(null);
     setAnalysisResult(null);
 
-    try {
-      const response = await fetch("/api/analyze", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          trackIds: selectedApps.map((app) => app.trackId),
-        }),
-      });
+    const result = await fetchApi<AnalyzeResponse>("/api/analyze", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        trackIds: selectedApps.map((app) => app.trackId),
+      }),
+    });
 
-      const data = await response.json();
-
-      if (!response.ok) {
-        throw new Error(
-          data?.error ?? `analyze responded with status ${response.status}`
-        );
-      }
-
-      setAnalysisResult(data);
-    } catch (err) {
-      setAnalysisError(
-        err instanceof Error
-          ? err.message
-          : "Hubo un problema generando el análisis, intenta de nuevo"
-      );
-    } finally {
-      setAnalysisLoading(false);
+    if (result?.kind === "success") {
+      setAnalysisResult(result.data);
+    } else if (result?.kind === "business") {
+      setAnalysisError(result.message);
     }
+    // Otherwise: the popup already fired (infra failure).
+
+    setAnalysisLoading(false);
   }
 
   // Explicit full reset for "start a new comparison from scratch". Editing
@@ -267,6 +321,10 @@ export default function AppSearch() {
 
   return (
     <div className="mx-auto w-full max-w-xl">
+      {apiError && (
+        <ApiErrorModal message={apiError} onClose={() => setApiError(null)} />
+      )}
+
       <input
         ref={searchInputRef}
         type="text"
@@ -360,6 +418,7 @@ export default function AppSearch() {
                             artistName: app.artistName,
                             artworkUrl100: app.artworkUrl100,
                             primaryGenreName: app.primaryGenreName,
+                            userRatingCount: app.userRatingCount,
                           })
                         }
                         disabled={isAddDisabled}
@@ -400,7 +459,8 @@ export default function AppSearch() {
                 const isSelected = selectedApps.some(
                   (selected) => selected.trackId === app.trackId
                 );
-                const isAddDisabled = isSelected || isMaxReached;
+                const hasNoRatings = app.userRatingCount < MIN_RATINGS_TO_COMPARE;
+                const isAddDisabled = isSelected || isMaxReached || hasNoRatings;
 
                 return (
                   <li key={app.trackId} className="flex items-center gap-3 py-3">
@@ -423,14 +483,20 @@ export default function AppSearch() {
                         {app.artistName}
                       </p>
                     </div>
-                    <button
-                      type="button"
-                      onClick={() => handleAdd(app)}
-                      disabled={isAddDisabled}
-                      className="shrink-0 rounded-md bg-zinc-900 px-3 py-1.5 text-xs font-medium text-white disabled:bg-zinc-300 disabled:text-zinc-500 dark:bg-zinc-100 dark:text-zinc-900 dark:disabled:bg-zinc-700 dark:disabled:text-zinc-400"
-                    >
-                      {isSelected ? "Agregada" : "Agregar"}
-                    </button>
+                    {hasNoRatings ? (
+                      <span className="shrink-0 text-right text-xs text-zinc-400 dark:text-zinc-500">
+                        No tiene reseñas para ser comparada
+                      </span>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => handleAdd(app)}
+                        disabled={isAddDisabled}
+                        className="shrink-0 rounded-md bg-zinc-900 px-3 py-1.5 text-xs font-medium text-white disabled:bg-zinc-300 disabled:text-zinc-500 dark:bg-zinc-100 dark:text-zinc-900 dark:disabled:bg-zinc-700 dark:disabled:text-zinc-400"
+                      >
+                        {isSelected ? "Agregada" : "Agregar"}
+                      </button>
+                    )}
                   </li>
                 );
               })}
@@ -551,5 +617,14 @@ export default function AppSearch() {
         </div>
       )}
     </div>
+  );
+}
+
+function isKnownErrorBody(body: unknown): body is { error: string } {
+  return (
+    !!body &&
+    typeof body === "object" &&
+    "error" in body &&
+    typeof (body as { error?: unknown }).error === "string"
   );
 }
