@@ -1,3 +1,8 @@
+"use client";
+
+import { useState } from "react";
+import type { ReactNode } from "react";
+
 export interface AppAnalyzed {
   trackId: number;
   appName: string;
@@ -36,10 +41,64 @@ interface ComparativeDashboardProps {
   artworkByTrackId: Record<number, string>;
 }
 
+type SectionId =
+  | "dimensions"
+  | "complaints"
+  | "differentiators"
+  | "conclusion";
+
+interface AccordionSectionProps {
+  title: string;
+  isOpen: boolean;
+  onToggle: () => void;
+  children: ReactNode;
+}
+
+function AccordionSection({
+  title,
+  isOpen,
+  onToggle,
+  children,
+}: AccordionSectionProps) {
+  return (
+    <div className="border-b border-zinc-200 pb-3 dark:border-zinc-800">
+      <button
+        type="button"
+        onClick={onToggle}
+        aria-expanded={isOpen}
+        className="flex w-full cursor-pointer items-center justify-between rounded-md px-1 py-1.5 text-left transition-colors hover:bg-zinc-100 dark:hover:bg-zinc-800"
+      >
+        <h3
+          className={`transition-all duration-200 text-zinc-900 dark:text-zinc-100 ${
+            isOpen ? "text-base font-bold" : "text-sm font-semibold"
+          }`}
+        >
+          {title}
+        </h3>
+        <span
+          className={`text-zinc-500 transition-transform duration-200 dark:text-zinc-400 ${
+            isOpen ? "rotate-180" : "rotate-0"
+          }`}
+        >
+          ⌄
+        </span>
+      </button>
+      {isOpen && <div className="px-1 pt-2">{children}</div>}
+    </div>
+  );
+}
+
 export default function ComparativeDashboard({
   data,
   artworkByTrackId,
 }: ComparativeDashboardProps) {
+  const [openSection, setOpenSection] = useState<SectionId | null>(
+    "dimensions"
+  );
+
+  function toggleSection(id: SectionId) {
+    setOpenSection((prev) => (prev === id ? null : id));
+  }
   const {
     apps_analyzed,
     sample_warnings,
@@ -140,10 +199,11 @@ export default function ComparativeDashboard({
       </div>
 
       {/* Dimension rankings table */}
-      <div>
-        <h3 className="mb-2 text-sm font-semibold text-zinc-900 dark:text-zinc-100">
-          Comparación por dimensión
-        </h3>
+      <AccordionSection
+        title="Comparación por dimensión"
+        isOpen={openSection === "dimensions"}
+        onToggle={() => toggleSection("dimensions")}
+      >
         <div className="overflow-x-auto">
           <table className="min-w-full border-collapse text-sm">
             <thead>
@@ -202,13 +262,14 @@ export default function ComparativeDashboard({
             </tbody>
           </table>
         </div>
-      </div>
+      </AccordionSection>
 
       {/* Category-wide complaints */}
-      <div>
-        <h3 className="mb-2 text-sm font-semibold text-zinc-900 dark:text-zinc-100">
-          Quejas comunes a la categoría
-        </h3>
+      <AccordionSection
+        title="Quejas comunes a la categoría"
+        isOpen={openSection === "complaints"}
+        onToggle={() => toggleSection("complaints")}
+      >
         {category_wide_complaints.length > 0 ? (
           <ul className="list-disc space-y-1 pl-5 text-sm text-zinc-700 dark:text-zinc-300">
             {category_wide_complaints.map((complaint, index) => (
@@ -220,13 +281,14 @@ export default function ComparativeDashboard({
             No se detectaron quejas comunes entre estas apps
           </p>
         )}
-      </div>
+      </AccordionSection>
 
       {/* Differentiators */}
-      <div>
-        <h3 className="mb-2 text-sm font-semibold text-zinc-900 dark:text-zinc-100">
-          Qué distingue a cada app
-        </h3>
+      <AccordionSection
+        title="Qué distingue a cada app"
+        isOpen={openSection === "differentiators"}
+        onToggle={() => toggleSection("differentiators")}
+      >
         <div className="flex gap-3 overflow-x-auto pb-2">
           {differentiators.map((item, index) => (
             <div
@@ -242,30 +304,33 @@ export default function ComparativeDashboard({
             </div>
           ))}
         </div>
-      </div>
+      </AccordionSection>
 
       {/* Conclusion — the closing verdict, styled to stand apart */}
-      <div className="rounded-lg border border-zinc-200 bg-zinc-50 p-4 dark:border-zinc-800 dark:bg-zinc-900">
-        <h3 className="mb-2 text-sm font-semibold text-zinc-900 dark:text-zinc-100">
-          Conclusión
-        </h3>
-        <div className="flex items-center gap-3">
-          {bestAppArtwork && (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img
-              src={bestAppArtwork}
-              alt={conclusion.best_app}
-              className="h-10 w-10 flex-shrink-0 rounded-xl"
-            />
-          )}
-          <p className="text-base font-bold text-zinc-900 dark:text-zinc-100">
-            {conclusion.best_app}
+      <AccordionSection
+        title="Conclusión"
+        isOpen={openSection === "conclusion"}
+        onToggle={() => toggleSection("conclusion")}
+      >
+        <div className="rounded-lg border border-zinc-200 bg-zinc-50 p-4 dark:border-zinc-800 dark:bg-zinc-900">
+          <div className="flex items-center gap-3">
+            {bestAppArtwork && (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={bestAppArtwork}
+                alt={conclusion.best_app}
+                className="h-10 w-10 flex-shrink-0 rounded-xl"
+              />
+            )}
+            <p className="text-base font-bold text-zinc-900 dark:text-zinc-100">
+              {conclusion.best_app}
+            </p>
+          </div>
+          <p className="mt-2 text-sm text-zinc-700 dark:text-zinc-300">
+            {conclusion.reasoning}
           </p>
         </div>
-        <p className="mt-2 text-sm text-zinc-700 dark:text-zinc-300">
-          {conclusion.reasoning}
-        </p>
-      </div>
+      </AccordionSection>
     </div>
   );
 }
