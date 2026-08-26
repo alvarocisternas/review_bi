@@ -233,6 +233,10 @@ export default function AppSearch() {
   const showMixedCategoryWarning =
     selectedApps.length >= 2 && uniqueGenres.length > 1;
 
+  const artworkByTrackId = Object.fromEntries(
+    selectedApps.map((app) => [app.trackId, app.artworkUrl100])
+  );
+
   return (
     <div className="mx-auto w-full max-w-xl">
       <input
@@ -489,7 +493,10 @@ export default function AppSearch() {
             )}
 
             {analysisResult && analysisResult.mode === "comparative" && (
-              <ComparativeDashboard data={analysisResult.data} />
+              <ComparativeDashboard
+                data={analysisResult.data}
+                artworkByTrackId={artworkByTrackId}
+              />
             )}
           </div>
         </div>

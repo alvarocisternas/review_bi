@@ -24,10 +24,15 @@ export interface ComparativeAnalysisData {
 
 interface ComparativeDashboardProps {
   data: ComparativeAnalysisData;
+  /** trackId -> artworkUrl100, sourced from the selected-apps state (the
+   * backend's apps_analyzed doesn't carry artwork). Missing entries fall
+   * back to a placeholder square instead of breaking the layout. */
+  artworkByTrackId: Record<number, string>;
 }
 
 export default function ComparativeDashboard({
   data,
+  artworkByTrackId,
 }: ComparativeDashboardProps) {
   const {
     apps_analyzed,
@@ -53,37 +58,66 @@ export default function ComparativeDashboard({
 
   return (
     <div className="mt-3 space-y-6">
-      {/* Header: apps analyzed */}
+      {/* Header: apps analyzed — iOS home-screen style, icon with the name
+          centered below it. reviewCount no longer shows here; sample
+          warnings surface as a small badge on the icon plus the full text
+          underneath, so that information isn't lost. */}
       <div>
         <h3 className="mb-2 text-sm font-semibold text-zinc-900 dark:text-zinc-100">
           Apps comparadas
         </h3>
-        <ul className="space-y-2">
-          {warningsByApp.map(({ app, warnings }) => (
-            <li key={app.trackId} className="text-sm">
-              <span className="text-zinc-900 dark:text-zinc-100">
-                {app.appName}{" "}
-                <span className="text-zinc-500">
-                  ({app.reviewCount} reseñas)
-                </span>
-              </span>
-              {warnings.map((warning, index) => (
+        <div className="flex flex-wrap justify-center gap-4">
+          {warningsByApp.map(({ app, warnings }) => {
+            const artworkUrl = artworkByTrackId[app.trackId];
+            const hasWarning = warnings.length > 0;
+
+            return (
+              <div
+                key={app.trackId}
+                className="flex w-16 flex-shrink-0 flex-col items-center"
+              >
+                <div className="relative">
+                  {artworkUrl ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      src={artworkUrl}
+                      alt={app.appName}
+                      className="h-16 w-16 rounded-2xl"
+                    />
+                  ) : (
+                    <div className="h-16 w-16 rounded-2xl bg-zinc-200 dark:bg-zinc-700" />
+                  )}
+                  {hasWarning && (
+                    <span
+                      title={warnings.join(" ")}
+                      className="absolute -right-1 -top-1 h-3.5 w-3.5 rounded-full bg-yellow-400 ring-2 ring-white dark:ring-zinc-950"
+                    />
+                  )}
+                </div>
+                <p className="mt-1 line-clamp-2 w-full text-center text-xs text-zinc-700 dark:text-zinc-300">
+                  {app.appName}
+                </p>
+              </div>
+            );
+          })}
+        </div>
+
+        {(warningsByApp.some(({ warnings }) => warnings.length > 0) ||
+          generalWarnings.length > 0) && (
+          <div className="mt-3 space-y-1">
+            {warningsByApp.flatMap(({ app, warnings }) =>
+              warnings.map((warning, index) => (
                 <p
-                  key={index}
-                  className="mt-0.5 text-xs text-yellow-700 dark:text-yellow-500"
+                  key={`${app.trackId}-${index}`}
+                  className="text-xs text-yellow-700 dark:text-yellow-500"
                 >
                   {warning}
                 </p>
-              ))}
-            </li>
-          ))}
-        </ul>
-
-        {generalWarnings.length > 0 && (
-          <div className="mt-2 space-y-1">
+              ))
+            )}
             {generalWarnings.map((warning, index) => (
               <p
-                key={index}
+                key={`general-${index}`}
                 className="text-xs text-yellow-700 dark:text-yellow-500"
               >
                 {warning}
