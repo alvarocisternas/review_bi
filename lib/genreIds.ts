@@ -26,3 +26,26 @@ export const GENRE_IDS: Record<string, number> = {
   Music: 6011,
   Lifestyle: 6012,
 };
+
+/**
+ * Spanish display labels for GENRE_IDS' keys — UI-only. The English key
+ * remains the internal identifier sent to /api/top-apps?genre= and
+ * validated there; never translate the keys themselves.
+ */
+export const GENRE_LABELS_ES: Record<string, string> = {
+  Games: "Juegos",
+  Business: "Negocios",
+  Education: "Educación",
+  Entertainment: "Entretenimiento",
+  Finance: "Finanzas",
+  "Health & Fitness": "Salud y bienestar",
+  Productivity: "Productividad",
+  Shopping: "Compras",
+  "Social Networking": "Redes sociales",
+  Travel: "Viajes",
+  News: "Noticias",
+  Utilities: "Utilidades",
+  "Photo & Video": "Foto y video",
+  Music: "Música",
+  Lifestyle: "Estilo de vida",
+};

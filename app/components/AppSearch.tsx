@@ -7,7 +7,7 @@ import AnalysisDashboard, {
 import ComparativeDashboard, {
   ComparativeAnalysisData,
 } from "./ComparativeDashboard";
-import { GENRE_IDS } from "@/lib/genreIds";
+import { GENRE_IDS, GENRE_LABELS_ES } from "@/lib/genreIds";
 
 export interface App {
   trackId: number;
@@ -297,7 +297,7 @@ export default function AppSearch() {
                   : "bg-zinc-100 text-zinc-700 hover:bg-zinc-200 dark:bg-zinc-800 dark:text-zinc-300 dark:hover:bg-zinc-700"
               }`}
             >
-              {category}
+              {GENRE_LABELS_ES[category] ?? category}
             </button>
           ))}
         </div>
@@ -307,7 +307,7 @@ export default function AppSearch() {
         <div className="mt-4 border-t border-zinc-200 pt-4 dark:border-zinc-800">
           {categoryLoading && (
             <p className="text-sm text-zinc-500">
-              Cargando top de {activeCategory}...
+              Cargando top de {GENRE_LABELS_ES[activeCategory] ?? activeCategory}...
             </p>
           )}
 
@@ -318,7 +318,8 @@ export default function AppSearch() {
           {!categoryLoading && !categoryError && categoryResults && (
             <>
               <h3 className="mb-2 text-sm font-semibold text-zinc-900 dark:text-zinc-100">
-                Top 15 en {activeCategory} por calificación
+                Top 15 en {GENRE_LABELS_ES[activeCategory] ?? activeCategory} por
+                calificación
               </h3>
               <ul className="divide-y divide-zinc-200 dark:divide-zinc-800">
                 {categoryResults.map((app) => {
