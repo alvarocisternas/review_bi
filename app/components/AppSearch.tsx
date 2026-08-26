@@ -37,6 +37,8 @@ const MAX_SELECTED_APPS = 5;
 const CATEGORIES = Object.keys(GENRE_IDS);
 
 export default function AppSearch() {
+  const searchInputRef = useRef<HTMLInputElement>(null);
+
   const [term, setTerm] = useState("");
   const [results, setResults] = useState<App[]>([]);
   const [loading, setLoading] = useState(false);
@@ -225,6 +227,32 @@ export default function AppSearch() {
     }
   }
 
+  // Explicit full reset for "start a new comparison from scratch". Editing
+  // the current selection (add/remove/re-analyze) never triggers this —
+  // only this button does, per the UX fix: search/category browsing on
+  // their own must NOT wipe an existing selection or result.
+  function handleNewComparison() {
+    setSelectedApps([]);
+
+    setAnalysisResult(null);
+    setAnalysisError(null);
+    setAnalysisLoading(false);
+
+    setTerm("");
+    setResults([]);
+    setError(null);
+    setLoading(false);
+
+    setShowCategoryChips(false);
+    latestCategoryRequestRef.current = null;
+    setActiveCategory(null);
+    setCategoryLoading(false);
+    setCategoryError(null);
+    setCategoryResults(null);
+
+    searchInputRef.current?.focus();
+  }
+
   const showEmptyState = hasQuery && !loading && !error && results.length === 0;
 
   const uniqueGenres = Array.from(
@@ -240,6 +268,7 @@ export default function AppSearch() {
   return (
     <div className="mx-auto w-full max-w-xl">
       <input
+        ref={searchInputRef}
         type="text"
         value={term}
         onChange={(e) => handleTermChange(e.target.value)}
@@ -493,6 +522,18 @@ export default function AppSearch() {
 
             {analysisError && (
               <p className="mt-2 text-sm text-red-600">{analysisError}</p>
+            )}
+
+            {analysisResult && (
+              <div className="mb-3 flex justify-end">
+                <button
+                  type="button"
+                  onClick={handleNewComparison}
+                  className="text-sm font-medium text-zinc-600 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-100"
+                >
+                  Nueva comparación
+                </button>
+              </div>
             )}
 
             {analysisResult && analysisResult.mode === "single" && (
