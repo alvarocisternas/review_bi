@@ -10,8 +10,14 @@ export interface App {
   primaryGenreName: string;
 }
 
+interface AnalyzeResponse {
+  mode: "single" | "comparative";
+  data: unknown;
+}
+
 const MIN_QUERY_LENGTH = 2;
 const DEBOUNCE_MS = 400;
+const MAX_SELECTED_APPS = 5;
 
 export default function AppSearch() {
   const [term, setTerm] = useState("");
@@ -20,7 +26,14 @@ export default function AppSearch() {
   const [error, setError] = useState<string | null>(null);
   const [selectedApps, setSelectedApps] = useState<App[]>([]);
 
+  const [analysisLoading, setAnalysisLoading] = useState(false);
+  const [analysisError, setAnalysisError] = useState<string | null>(null);
+  const [analysisResult, setAnalysisResult] = useState<AnalyzeResponse | null>(
+    null
+  );
+
   const hasQuery = term.trim().length >= MIN_QUERY_LENGTH;
+  const isMaxReached = selectedApps.length >= MAX_SELECTED_APPS;
 
   function handleTermChange(value: string) {
     setTerm(value);
@@ -87,11 +100,58 @@ export default function AppSearch() {
       if (prev.some((selected) => selected.trackId === app.trackId)) {
         return prev;
       }
+      if (prev.length >= MAX_SELECTED_APPS) {
+        return prev;
+      }
       return [...prev, app];
     });
   }
 
+  function handleRemove(trackId: number) {
+    setSelectedApps((prev) => prev.filter((app) => app.trackId !== trackId));
+  }
+
+  async function handleAnalyze() {
+    setAnalysisLoading(true);
+    setAnalysisError(null);
+    setAnalysisResult(null);
+
+    try {
+      const response = await fetch("/api/analyze", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          trackIds: selectedApps.map((app) => app.trackId),
+        }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(
+          data?.error ?? `analyze responded with status ${response.status}`
+        );
+      }
+
+      setAnalysisResult(data);
+    } catch (err) {
+      setAnalysisError(
+        err instanceof Error
+          ? err.message
+          : "Hubo un problema generando el análisis, intenta de nuevo"
+      );
+    } finally {
+      setAnalysisLoading(false);
+    }
+  }
+
   const showEmptyState = hasQuery && !loading && !error && results.length === 0;
+
+  const uniqueGenres = Array.from(
+    new Set(selectedApps.map((app) => app.primaryGenreName))
+  );
+  const showMixedCategoryWarning =
+    selectedApps.length >= 2 && uniqueGenres.length > 1;
 
   return (
     <div className="mx-auto w-full max-w-xl">
@@ -115,53 +175,138 @@ export default function AppSearch() {
         )}
 
         {!loading && !error && results.length > 0 && (
-          <ul className="divide-y divide-zinc-200 dark:divide-zinc-800">
-            {results.map((app) => {
-              const isSelected = selectedApps.some(
-                (selected) => selected.trackId === app.trackId
-              );
+          <>
+            <ul className="divide-y divide-zinc-200 dark:divide-zinc-800">
+              {results.map((app) => {
+                const isSelected = selectedApps.some(
+                  (selected) => selected.trackId === app.trackId
+                );
+                const isAddDisabled = isSelected || isMaxReached;
 
-              return (
-                <li key={app.trackId} className="flex items-center gap-3 py-3">
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img
-                    src={app.artworkUrl100}
-                    alt={app.trackName}
-                    className="h-10 w-10 flex-shrink-0 rounded-lg"
-                  />
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-2">
-                      <p className="truncate text-sm font-medium text-zinc-900 dark:text-zinc-100">
-                        {app.trackName}
+                return (
+                  <li key={app.trackId} className="flex items-center gap-3 py-3">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      src={app.artworkUrl100}
+                      alt={app.trackName}
+                      className="h-10 w-10 flex-shrink-0 rounded-lg"
+                    />
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-2">
+                        <p className="truncate text-sm font-medium text-zinc-900 dark:text-zinc-100">
+                          {app.trackName}
+                        </p>
+                        <span className="shrink-0 rounded-full bg-zinc-100 px-2 py-0.5 text-xs text-zinc-600 dark:bg-zinc-800 dark:text-zinc-400">
+                          {app.primaryGenreName}
+                        </span>
+                      </div>
+                      <p className="truncate text-xs text-zinc-500">
+                        {app.artistName}
                       </p>
-                      <span className="shrink-0 rounded-full bg-zinc-100 px-2 py-0.5 text-xs text-zinc-600 dark:bg-zinc-800 dark:text-zinc-400">
-                        {app.primaryGenreName}
-                      </span>
                     </div>
-                    <p className="truncate text-xs text-zinc-500">
-                      {app.artistName}
-                    </p>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => handleAdd(app)}
-                    disabled={isSelected}
-                    className="shrink-0 rounded-md bg-zinc-900 px-3 py-1.5 text-xs font-medium text-white disabled:bg-zinc-300 disabled:text-zinc-500 dark:bg-zinc-100 dark:text-zinc-900 dark:disabled:bg-zinc-700 dark:disabled:text-zinc-400"
-                  >
-                    {isSelected ? "Agregada" : "Agregar"}
-                  </button>
-                </li>
-              );
-            })}
-          </ul>
-        )}
+                    <button
+                      type="button"
+                      onClick={() => handleAdd(app)}
+                      disabled={isAddDisabled}
+                      className="shrink-0 rounded-md bg-zinc-900 px-3 py-1.5 text-xs font-medium text-white disabled:bg-zinc-300 disabled:text-zinc-500 dark:bg-zinc-100 dark:text-zinc-900 dark:disabled:bg-zinc-700 dark:disabled:text-zinc-400"
+                    >
+                      {isSelected ? "Agregada" : "Agregar"}
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
 
-        {selectedApps.length > 0 && (
-          <p className="mt-3 text-sm text-zinc-500">
-            {selectedApps.length} apps agregadas
-          </p>
+            {isMaxReached && (
+              <p className="mt-2 text-xs text-zinc-500">
+                Máximo 5 apps por análisis
+              </p>
+            )}
+          </>
         )}
       </div>
+
+      {selectedApps.length > 0 && (
+        <div className="mt-6 border-t border-zinc-200 pt-4 dark:border-zinc-800">
+          {showMixedCategoryWarning && (
+            <p className="mb-3 rounded-md bg-yellow-100 px-3 py-2 text-xs text-yellow-900 dark:bg-yellow-900/30 dark:text-yellow-200">
+              Estás comparando apps de categorías distintas:{" "}
+              {uniqueGenres.join(", ")}
+            </p>
+          )}
+
+          <ul className="divide-y divide-zinc-200 dark:divide-zinc-800">
+            {selectedApps.map((app) => (
+              <li key={app.trackId} className="flex items-center gap-3 py-2">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={app.artworkUrl100}
+                  alt={app.trackName}
+                  className="h-8 w-8 flex-shrink-0 rounded-md"
+                />
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-2">
+                    <p className="truncate text-sm text-zinc-900 dark:text-zinc-100">
+                      {app.trackName}
+                    </p>
+                    <span className="shrink-0 rounded-full bg-zinc-100 px-2 py-0.5 text-xs text-zinc-600 dark:bg-zinc-800 dark:text-zinc-400">
+                      {app.primaryGenreName}
+                    </span>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => handleRemove(app.trackId)}
+                  aria-label={`Quitar ${app.trackName}`}
+                  className="shrink-0 rounded-md px-2 py-1 text-sm text-zinc-500 hover:bg-zinc-100 hover:text-zinc-900 dark:hover:bg-zinc-800 dark:hover:text-zinc-100"
+                >
+                  ×
+                </button>
+              </li>
+            ))}
+          </ul>
+
+          <div className="mt-3">
+            {selectedApps.length === 1 && (
+              <button
+                type="button"
+                onClick={handleAnalyze}
+                disabled={analysisLoading}
+                className="rounded-md bg-zinc-900 px-4 py-2 text-sm font-medium text-white disabled:bg-zinc-400 dark:bg-zinc-100 dark:text-zinc-900 dark:disabled:bg-zinc-700"
+              >
+                Analizar esta app
+              </button>
+            )}
+
+            {selectedApps.length >= 2 && (
+              <button
+                type="button"
+                onClick={handleAnalyze}
+                disabled={analysisLoading}
+                className="rounded-md bg-zinc-900 px-4 py-2 text-sm font-medium text-white disabled:bg-zinc-400 dark:bg-zinc-100 dark:text-zinc-900 dark:disabled:bg-zinc-700"
+              >
+                Comparar
+              </button>
+            )}
+
+            {analysisLoading && (
+              <p className="mt-2 text-sm text-zinc-500">
+                Analizando... esto puede tardar unos segundos
+              </p>
+            )}
+
+            {analysisError && (
+              <p className="mt-2 text-sm text-red-600">{analysisError}</p>
+            )}
+
+            {analysisResult && (
+              <pre className="mt-3 max-h-96 overflow-auto rounded-lg bg-zinc-100 p-3 text-xs text-zinc-800 dark:bg-zinc-900 dark:text-zinc-200">
+                {JSON.stringify(analysisResult, null, 2)}
+              </pre>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
