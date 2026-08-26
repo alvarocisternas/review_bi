@@ -34,7 +34,7 @@ export interface ReviewsResult {
  */
 export async function fetchReviews(
   trackId: string,
-  country: string = "us",
+  country: string = "cl",
   page: number = 1
 ): Promise<ReviewsResult> {
   // Always include the country segment, even for "us". This used to be

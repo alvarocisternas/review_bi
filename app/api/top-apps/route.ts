@@ -79,7 +79,7 @@ function parseChartEntry(entry: RawChartEntry): ChartCandidate | null {
 export async function GET(request: NextRequest) {
   const searchParams = request.nextUrl.searchParams;
   const genre = searchParams.get("genre");
-  const country = searchParams.get("country")?.trim() || "us";
+  const country = searchParams.get("country")?.trim() || "cl";
 
   if (!genre || !(genre in GENRE_IDS)) {
     return NextResponse.json(

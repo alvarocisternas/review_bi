@@ -28,9 +28,12 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: "term is required" }, { status: 400 });
   }
 
+  // country=CL restricts results to apps actually available on the Chilean
+  // App Store — the Search API takes the country code uppercase (unlike
+  // the RSS feeds' lowercase /cl/ path segment).
   const url = `https://itunes.apple.com/search?term=${encodeURIComponent(
     term
-  )}&entity=software&limit=10`;
+  )}&entity=software&country=CL&limit=10`;
 
   let data: ITunesSearchResponse;
   try {

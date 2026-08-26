@@ -161,7 +161,7 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  const country = body.country?.trim() || "us";
+  const country = body.country?.trim() || "cl";
   const trackIds = body.trackIds;
 
   if (!isValidTrackIds(trackIds)) {

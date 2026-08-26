@@ -8,7 +8,7 @@ export async function GET(
   const { trackId } = await params;
   const searchParams = request.nextUrl.searchParams;
 
-  const country = searchParams.get("country")?.trim() || "us";
+  const country = searchParams.get("country")?.trim() || "cl";
   const pageParam = searchParams.get("page")?.trim();
   const page = pageParam && !isNaN(Number(pageParam)) ? Number(pageParam) : 1;
 
