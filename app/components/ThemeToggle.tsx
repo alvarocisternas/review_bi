@@ -3,7 +3,9 @@
 import { useState } from "react";
 
 /**
- * Fixed top-right button that toggles the "dark" class on <html>.
+ * Button that toggles the "dark" class on <html>. Rendered in the normal
+ * document flow (centered by its parent in page.tsx, below the logo
+ * carousel and above the title) — no fixed/absolute positioning here.
  *
  * No localStorage/sessionStorage — theme lives purely in this component's
  * React state, per the MVP requirement. The initial value (true) matches
@@ -26,7 +28,7 @@ export default function ThemeToggle() {
       type="button"
       onClick={handleToggle}
       aria-label={isDark ? "Cambiar a modo claro" : "Cambiar a modo oscuro"}
-      className="fixed right-4 top-4 z-50 flex h-9 w-9 items-center justify-center rounded-full border border-zinc-300 bg-white text-base shadow-sm hover:bg-zinc-100 dark:border-zinc-700 dark:bg-zinc-900 dark:hover:bg-zinc-800"
+      className="flex h-9 w-9 items-center justify-center rounded-full border border-zinc-300 bg-white text-base shadow-sm hover:bg-zinc-100 dark:border-zinc-700 dark:bg-zinc-900 dark:hover:bg-zinc-800"
     >
       {isDark ? "☀️" : "🌙"}
     </button>
