@@ -4,6 +4,9 @@ import { useEffect, useState } from "react";
 import AnalysisDashboard, {
   SingleAnalysisData,
 } from "./AnalysisDashboard";
+import ComparativeDashboard, {
+  ComparativeAnalysisData,
+} from "./ComparativeDashboard";
 
 export interface App {
   trackId: number;
@@ -15,7 +18,7 @@ export interface App {
 
 type AnalyzeResponse =
   | { mode: "single"; data: SingleAnalysisData }
-  | { mode: "comparative"; data: unknown };
+  | { mode: "comparative"; data: ComparativeAnalysisData };
 
 const MIN_QUERY_LENGTH = 2;
 const DEBOUNCE_MS = 400;
@@ -306,10 +309,7 @@ export default function AppSearch() {
             )}
 
             {analysisResult && analysisResult.mode === "comparative" && (
-              // TODO(ALV-68): replace with the comparative dashboard.
-              <pre className="mt-3 max-h-96 overflow-auto rounded-lg bg-zinc-100 p-3 text-xs text-zinc-800 dark:bg-zinc-900 dark:text-zinc-200">
-                {JSON.stringify(analysisResult, null, 2)}
-              </pre>
+              <ComparativeDashboard data={analysisResult.data} />
             )}
           </div>
         </div>
