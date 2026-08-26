@@ -417,6 +417,10 @@ export default function AppSearch() {
 
       {selectedApps.length > 0 && (
         <div className="mt-6 border-t border-zinc-200 pt-4 dark:border-zinc-800">
+          <h3 className="mb-2 text-sm font-semibold text-zinc-900 dark:text-zinc-100">
+            Apps seleccionadas
+          </h3>
+
           {showMixedCategoryWarning && (
             <p className="mb-3 rounded-md bg-yellow-100 px-3 py-2 text-xs text-yellow-900 dark:bg-yellow-900/30 dark:text-yellow-200">
               Estás comparando apps de categorías distintas:{" "}
@@ -424,36 +428,39 @@ export default function AppSearch() {
             </p>
           )}
 
-          <ul className="divide-y divide-zinc-200 dark:divide-zinc-800">
+          {/* iOS home-screen style: icon with the name centered below it,
+              and a small "x" badge to remove — this is now the ONLY
+              rendering of the live selection (the old icon+name+badge+x
+              row list was removed to stop duplicating this same
+              information). */}
+          <div className="flex flex-wrap justify-center gap-4">
             {selectedApps.map((app) => (
-              <li key={app.trackId} className="flex items-center gap-3 py-2">
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img
-                  src={app.artworkUrl100}
-                  alt={app.trackName}
-                  className="h-8 w-8 flex-shrink-0 rounded-md"
-                />
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-2">
-                    <p className="truncate text-sm text-zinc-900 dark:text-zinc-100">
-                      {app.trackName}
-                    </p>
-                    <span className="shrink-0 rounded-full bg-zinc-100 px-2 py-0.5 text-xs text-zinc-600 dark:bg-zinc-800 dark:text-zinc-400">
-                      {app.primaryGenreName}
-                    </span>
-                  </div>
+              <div
+                key={app.trackId}
+                className="flex w-16 flex-shrink-0 flex-col items-center"
+              >
+                <div className="relative">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={app.artworkUrl100}
+                    alt={app.trackName}
+                    className="h-16 w-16 rounded-2xl"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => handleRemove(app.trackId)}
+                    aria-label={`Quitar ${app.trackName}`}
+                    className="absolute -right-1.5 -top-1.5 flex h-5 w-5 cursor-pointer items-center justify-center rounded-full bg-zinc-800 text-xs font-bold leading-none text-white ring-2 ring-white hover:bg-zinc-950 dark:ring-zinc-950"
+                  >
+                    ×
+                  </button>
                 </div>
-                <button
-                  type="button"
-                  onClick={() => handleRemove(app.trackId)}
-                  aria-label={`Quitar ${app.trackName}`}
-                  className="shrink-0 rounded-md px-2 py-1 text-sm text-zinc-500 hover:bg-zinc-100 hover:text-zinc-900 dark:hover:bg-zinc-800 dark:hover:text-zinc-100"
-                >
-                  ×
-                </button>
-              </li>
+                <p className="mt-1 line-clamp-2 w-full text-center text-xs text-zinc-700 dark:text-zinc-300">
+                  {app.trackName}
+                </p>
+              </div>
             ))}
-          </ul>
+          </div>
 
           <div className="mt-3">
             {selectedApps.length === 1 && (
