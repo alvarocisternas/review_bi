@@ -27,3 +27,28 @@ body {
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
 }
+
+/* Decorative app-logo carousel: continuous left-to-right scroll. Registered
+   as a Tailwind v4 theme animation (--animate-*) so `animate-marquee` is a
+   real utility class, not an arbitrary one-off. The row's content is
+   rendered twice by the component; animating from -50% to 0% shifts the
+   whole strip right by exactly one copy's width each loop, so it repeats
+   with no visible seam. */
+@theme {
+  --animate-marquee: marquee 32s linear infinite;
+}
+
+@keyframes marquee {
+  from {
+    transform: translateX(-50%);
+  }
+  to {
+    transform: translateX(0%);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-marquee {
+    animation-play-state: paused;
+  }
+}
