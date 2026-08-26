@@ -1,0 +1,218 @@
+{
+  "feed": {
+    "author": {
+      "name": {
+        "label": "iTunes Store"
+      },
+      "uri": {
+        "label": "http://www.apple.com/itunes/"
+      }
+    },
+    "entry": [
+      {
+        "author": {
+          "uri": {
+            "label": "https://itunes.apple.com/us/reviews/id1291921795"
+          },
+          "name": {
+            "label": "#scissorsisters"
+          },
+          "label": ""
+        },
+        "updated": {
+          "label": "2026-08-24T16:34:03-07:00"
+        },
+        "im:rating": {
+          "label": "5"
+        },
+        "im:version": {
+          "label": "9.1.76"
+        },
+        "id": {
+          "label": "14468232996"
+        },
+        "title": {
+          "label": "Amazing"
+        },
+        "content": {
+          "label": "I’ve been using this for a while and it has super amazing music options, the ads are kind of annoying but overall it’s a really nice app and I definitely am gonna use this for a long time, it’s free music with only a few ads and you get literally every song you could think of or possibly want.",
+          "attributes": {
+            "type": "text"
+          }
+        },
+        "link": {
+          "attributes": {
+            "rel": "related",
+            "href": "https://itunes.apple.com/us/review?id=324684580&type=Purple%20Software"
+          }
+        },
+        "im:voteSum": {
+          "label": "0"
+        },
+        "im:contentType": {
+          "attributes": {
+            "term": "Application",
+            "label": "Application"
+          }
+        },
+        "im:voteCount": {
+          "label": "0"
+        }
+      },
+      {
+        "author": {
+          "uri": {
+            "label": "https://itunes.apple.com/us/reviews/id1652934284"
+          },
+          "name": {
+            "label": "Vargas Yuri"
+          },
+          "label": ""
+        },
+        "updated": {
+          "label": "2026-08-24T16:28:06-07:00"
+        },
+        "im:rating": {
+          "label": "5"
+        },
+        "im:version": {
+          "label": "9.1.76"
+        },
+        "id": {
+          "label": "14468218403"
+        },
+        "title": {
+          "label": "Reseña"
+        },
+        "content": {
+          "label": "Súper buena apps",
+          "attributes": {
+            "type": "text"
+          }
+        },
+        "link": {
+          "attributes": {
+            "rel": "related",
+            "href": "https://itunes.apple.com/us/review?id=324684580&type=Purple%20Software"
+          }
+        },
+        "im:voteSum": {
+          "label": "0"
+        },
+        "im:contentType": {
+          "attributes": {
+            "term": "Application",
+            "label": "Application"
+          }
+        },
+        "im:voteCount": {
+          "label": "0"
+        }
+      },
+      {
+        "author": {
+          "uri": {
+            "label": "https://itunes.apple.com/us/reviews/id1337005504"
+          },
+          "name": {
+            "label": "T_Pe@rl"
+          },
+          "label": ""
+        },
+        "updated": {
+          "label": "2026-08-24T16:26:04-07:00"
+        },
+        "im:rating": {
+          "label": "5"
+        },
+        "im:version": {
+          "label": "9.1.76"
+        },
+        "id": {
+          "label": "14468213354"
+        },
+        "title": {
+          "label": "Israel"
+        },
+        "content": {
+          "label": "Super sigma",
+          "attributes": {
+            "type": "text"
+          }
+        },
+        "link": {
+          "attributes": {
+            "rel": "related",
+            "href": "https://itunes.apple.com/us/review?id=324684580&type=Purple%20Software"
+          }
+        },
+        "im:voteSum": {
+          "label": "0"
+        },
+        "im:contentType": {
+          "attributes": {
+            "term": "Application",
+            "label": "Application"
+          }
+        },
+        "im:voteCount": {
+          "label": "0"
+        }
+      }
+    ],
+    "updated": {
+      "label": "2026-08-25T19:59:19-07:00"
+    },
+    "rights": {
+      "label": "Copyright 2008 Apple Inc."
+    },
+    "title": {
+      "label": "iTunes Store: Customer Reviews"
+    },
+    "icon": {
+      "label": "http://itunes.apple.com/favicon.ico"
+    },
+    "link": [
+      {
+        "attributes": {
+          "rel": "alternate",
+          "type": "text/html",
+          "href": "https://music.apple.com/WebObjects/MZStore.woa/wa/viewGrouping?cc=us&id=1"
+        }
+      },
+      {
+        "attributes": {
+          "rel": "self",
+          "href": "https://itunes.apple.com/rss/customerreviews/id=324684580/sortby=mostrecent/json"
+        }
+      },
+      {
+        "attributes": {
+          "rel": "first",
+          "href": "https://itunes.apple.com/us/rss/customerreviews/page=1/id=324684580/sortby=mostrecent/xml?urlDesc=/customerreviews/id=324684580/sortby=mostrecent/json"
+        }
+      },
+      {
+        "attributes": {
+          "rel": "last",
+          "href": "https://itunes.apple.com/us/rss/customerreviews/page=10/id=324684580/sortby=mostrecent/xml?urlDesc=/customerreviews/id=324684580/sortby=mostrecent/json"
+        }
+      },
+      {
+        "attributes": {
+          "rel": "previous",
+          "href": "https://itunes.apple.com/us/rss/customerreviews/page=1/id=324684580/sortby=mostrecent/xml?urlDesc=/customerreviews/id=324684580/sortby=mostrecent/json"
+        }
+      },
+      {
+        "attributes": {
+          "rel": "next",
+          "href": "https://itunes.apple.com/us/rss/customerreviews/page=2/id=324684580/sortby=mostrecent/xml?urlDesc=/customerreviews/id=324684580/sortby=mostrecent/json"
+        }
+      }
+    ],
+    "id": {
+      "label": "https://itunes.apple.com/rss/customerreviews/id=324684580/sortby=mostrecent/json"
+    }
+  }
+}
