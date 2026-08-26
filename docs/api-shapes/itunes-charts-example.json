@@ -1,0 +1,329 @@
+{
+    "feed": {
+        "author": {
+            "name": {
+                "label": "iTunes Store"
+            },
+            "uri": {
+                "label": "http://www.apple.com/itunes/"
+            }
+        },
+        "entry": [
+            {
+                "im:name": {
+                    "label": "Meowdoku!"
+                },
+                "im:image": [
+                    {
+                        "label": "https://is1-ssl.mzstatic.com/image/thumb/Purple221/v4/1d/92/a0/1d92a03e-cbc0-50c4-e454-bef69fa07305/AppIcon-0-0-1x_U007epad-0-11-0-85-220.png/53x53bb.png",
+                        "attributes": {
+                            "height": "53"
+                        }
+                    },
+                    {
+                        "label": "https://is1-ssl.mzstatic.com/image/thumb/Purple221/v4/1d/92/a0/1d92a03e-cbc0-50c4-e454-bef69fa07305/AppIcon-0-0-1x_U007epad-0-11-0-85-220.png/75x75bb.png",
+                        "attributes": {
+                            "height": "75"
+                        }
+                    },
+                    {
+                        "label": "https://is1-ssl.mzstatic.com/image/thumb/Purple221/v4/1d/92/a0/1d92a03e-cbc0-50c4-e454-bef69fa07305/AppIcon-0-0-1x_U007epad-0-11-0-85-220.png/100x100bb.png",
+                        "attributes": {
+                            "height": "100"
+                        }
+                    }
+                ],
+                "summary": {
+                    "label": "Looking for a game that soothes the soul but keeps your brain spinning? Welcome to Meowdoku \u2014 a pure logic puzzle game that flawlessly blends the rigorous reasoning of Sudoku with the thrilling deduction of Minesweeper.\n\nHere, you have only one mission: find the perfect \"exclusive territory\" for every aloof little cat!\nSimple Rules, Deep Strategy\n\nThe concept is elegant and intuitive, yet anything but simple:\n\u2022 Exclusive Territory: The board is divided into colored sections. You must place exactly one cat in each section.\n\u2022 The Aloof Rule: Cats need absolute personal space! They absolutely cannot share the same row, column, or touch each other\u2014not even diagonally.\n\u2022 Risk & Reward: Double-tap a tile to place a cat. You only have 3 chances to make a mistake (hearts). Guess right, and you're rewarded with pure puzzle-solving satisfaction; guess wrong, and you lose a heart. Guessing won't save you; every single move must be carefully calculated!\n\nKey Features\n\u2022 Pure & Immersive Experience\n\u2022 Non-Intrusive Ads: Zero interruptions to your gameplay, letting you fully enjoy a completely focused, Zen-like flow state.\n\u2022 Play Offline Anytime: No internet required. Perfectly fills up the puzzle-shaped hole in your daily commute, time spent waiting in line, or your morning coffee break.\n\nWake up your mind with brand-new \"Daily Puzzles\" every single day.\nPush your limits and see if you can break your fastest completion times on the global leaderboards. Why Meowdoku Will Stay on Your Phone Meowdoku won't hijack your attention with tedious social mechanics or endless daily grinds\u2014it earns your love through pure gameplay quality. With its minimalist aesthetic and satisfying tactile feedback, it takes just seconds to learn. Yet, long after you put your phone down, its elegant logic loop will keep lingering in your mind. Ready for a brain-teasing puzzle adventure filled with adorable felines? Download Meowdoku now, put your logic to the test, and become the ultimate feline puzzle master!\n\nTerms: https://oakevergames.com/tos.html\nPrivacy Policy: https://oakevergames.com/pp.html\nEULA: https://www.apple.com/legal/internet-services/itunes/dev/stdeula/\nEmail: support@oakevergames.com"
+                },
+                "im:price": {
+                    "label": "Get",
+                    "attributes": {
+                        "amount": "0.00",
+                        "currency": "USD"
+                    }
+                },
+                "im:contentType": {
+                    "attributes": {
+                        "term": "Application",
+                        "label": "Application"
+                    }
+                },
+                "rights": {
+                    "label": "\u00a9 2022 OAKEVER GAMES PTE. LTD."
+                },
+                "title": {
+                    "label": "Meowdoku! - Oakever Games"
+                },
+                "link": [
+                    {
+                        "attributes": {
+                            "rel": "alternate",
+                            "type": "text/html",
+                            "href": "https://apps.apple.com/us/app/meowdoku/id6761760135?uo=2"
+                        }
+                    },
+                    {
+                        "im:duration": {
+                            "label": "0"
+                        },
+                        "attributes": {
+                            "title": "Preview",
+                            "rel": "enclosure",
+                            "type": "image/jpeg",
+                            "href": "https://is1-ssl.mzstatic.com/image/thumb/PurpleSource211/v4/18/d9/29/18d929bd-bce1-2daa-403c-11e4099cb4e2/1.png/1024x1024bb.png",
+                            "im:assetType": "preview"
+                        }
+                    }
+                ],
+                "id": {
+                    "label": "https://apps.apple.com/us/app/meowdoku/id6761760135?uo=2",
+                    "attributes": {
+                        "im:id": "6761760135",
+                        "im:bundleId": "com.oakever.meowdoku"
+                    }
+                },
+                "im:artist": {
+                    "label": "Oakever Games",
+                    "attributes": {
+                        "href": "https://apps.apple.com/us/developer/oakever-games/id1658671470?uo=2"
+                    }
+                },
+                "category": {
+                    "attributes": {
+                        "im:id": "6014",
+                        "term": "Games",
+                        "scheme": "https://apps.apple.com/us/genre/ios-games/id6014?uo=2",
+                        "label": "Games"
+                    }
+                },
+                "im:releaseDate": {
+                    "label": "2026-05-19T00:00:00-07:00",
+                    "attributes": {
+                        "label": "May 19, 2026"
+                    }
+                }
+            },
+            {
+                "im:name": {
+                    "label": "Smash Fest!"
+                },
+                "im:image": [
+                    {
+                        "label": "https://is1-ssl.mzstatic.com/image/thumb/Purple221/v4/93/3e/2e/933e2ed1-8b86-d507-1fc1-184f7255e81c/AppIcon-0-0-1x_U007emarketing-0-8-0-85-220.png/53x53bb.png",
+                        "attributes": {
+                            "height": "53"
+                        }
+                    },
+                    {
+                        "label": "https://is1-ssl.mzstatic.com/image/thumb/Purple221/v4/93/3e/2e/933e2ed1-8b86-d507-1fc1-184f7255e81c/AppIcon-0-0-1x_U007emarketing-0-8-0-85-220.png/75x75bb.png",
+                        "attributes": {
+                            "height": "75"
+                        }
+                    },
+                    {
+                        "label": "https://is1-ssl.mzstatic.com/image/thumb/Purple221/v4/93/3e/2e/933e2ed1-8b86-d507-1fc1-184f7255e81c/AppIcon-0-0-1x_U007emarketing-0-8-0-85-220.png/100x100bb.png",
+                        "attributes": {
+                            "height": "100"
+                        }
+                    }
+                ],
+                "summary": {
+                    "label": "Welcome to Smash Fest!\nGet ready for the most explosive festival in town! Step into a colorful arena where every shot counts \u2014 fire your cannon, smash through fragile jars, break apart heavy stones, and watch the chaos unfold in the most satisfying way.\nEach level is a brand-new challenge. Adjust your angle, power, and timing to create the perfect launch. One clean shot can trigger a chain of destruction that feels like pure magic. Easy to play from the first minute, but full of skill and precision for players who love mastering mechanics.\nFrom lively festival scenes to dynamic destruction effects, Smash Fest brings the ultimate aim \u2013 shoot \u2013 smash experience!\nKey Features\n- Stunning high-quality 3D visuals\n- Satisfying destruction: shattering jars & crumbling stones\n- Skill-based shot mechanics that reward perfect accuracy\n- Colorful festival environments with animated scenes\n- Simple controls, endlessly fun progression\nThe festival is ready!\nFire the cannon and let the show begin!"
+                },
+                "im:price": {
+                    "label": "Get",
+                    "attributes": {
+                        "amount": "0.00",
+                        "currency": "USD"
+                    }
+                },
+                "im:contentType": {
+                    "attributes": {
+                        "term": "Application",
+                        "label": "Application"
+                    }
+                },
+                "rights": {
+                    "label": "\u00a9 Flow Games 2025"
+                },
+                "title": {
+                    "label": "Smash Fest! - Flow Games Bilisim Yazilim ve Pazarlama Anonim Sirketi"
+                },
+                "link": [
+                    {
+                        "attributes": {
+                            "rel": "alternate",
+                            "type": "text/html",
+                            "href": "https://apps.apple.com/us/app/smash-fest/id6748084174?uo=2"
+                        }
+                    },
+                    {
+                        "im:duration": {
+                            "label": "0"
+                        },
+                        "attributes": {
+                            "title": "Preview",
+                            "rel": "enclosure",
+                            "type": "image/jpeg",
+                            "href": "https://is1-ssl.mzstatic.com/image/thumb/PurpleSource221/v4/52/d3/a3/52d3a34c-04ab-0aae-e471-3522510e89c9/KnockemAll.png/1024x1024bb.png",
+                            "im:assetType": "preview"
+                        }
+                    }
+                ],
+                "id": {
+                    "label": "https://apps.apple.com/us/app/smash-fest/id6748084174?uo=2",
+                    "attributes": {
+                        "im:id": "6748084174",
+                        "im:bundleId": "com.flow.cannon-ball"
+                    }
+                },
+                "im:artist": {
+                    "label": "Flow Games Bilisim Yazilim ve Pazarlama Anonim Sirketi",
+                    "attributes": {
+                        "href": "https://apps.apple.com/us/developer/flow-games-bilisim-yazilim-ve-pazarlama-anonim-sirketi/id1802554030?uo=2"
+                    }
+                },
+                "category": {
+                    "attributes": {
+                        "im:id": "6014",
+                        "term": "Games",
+                        "scheme": "https://apps.apple.com/us/genre/ios-games/id6014?uo=2",
+                        "label": "Games"
+                    }
+                },
+                "im:releaseDate": {
+                    "label": "2025-12-16T00:00:00-07:00",
+                    "attributes": {
+                        "label": "December 16, 2025"
+                    }
+                }
+            },
+            {
+                "im:name": {
+                    "label": "Block Out! - Color Sort Puzzle"
+                },
+                "im:image": [
+                    {
+                        "label": "https://is1-ssl.mzstatic.com/image/thumb/Purple221/v4/58/e8/94/58e8945d-4868-a2a8-5315-66c4d47a9e63/AppIcon-0-0-1x_U007emarketing-0-8-0-85-220.png/53x53bb.png",
+                        "attributes": {
+                            "height": "53"
+                        }
+                    },
+                    {
+                        "label": "https://is1-ssl.mzstatic.com/image/thumb/Purple221/v4/58/e8/94/58e8945d-4868-a2a8-5315-66c4d47a9e63/AppIcon-0-0-1x_U007emarketing-0-8-0-85-220.png/75x75bb.png",
+                        "attributes": {
+                            "height": "75"
+                        }
+                    },
+                    {
+                        "label": "https://is1-ssl.mzstatic.com/image/thumb/Purple221/v4/58/e8/94/58e8945d-4868-a2a8-5315-66c4d47a9e63/AppIcon-0-0-1x_U007emarketing-0-8-0-85-220.png/100x100bb.png",
+                        "attributes": {
+                            "height": "100"
+                        }
+                    }
+                ],
+                "summary": {
+                    "label": "Get ready for Block Out!, a block puzzle game where every level feels alive. Slide colorful blocks, match them with their targets while experiencing the unique twist of moving elevators and block generators. Each puzzle feels fresh with ever-changing layouts. Plan your moves, think quickly, and enjoy the satisfaction of perfect clears as you progress through a colorful and evolving puzzle adventure. Block Out! offers a puzzle experience that keeps you coming back for more. Accept the challenge and start your journey! \n\nQuick Play Guide\n- Start Simple: Slide the blocks to the matching doors and create satisfying clears.\n- Plan Ahead: Position blocks carefully, manage space, and keep up with dynamic challenges. \n- Think Fast: Move faster to complete levels and unlock new challenges.\n\nCool Features\n- Offline Play: Enjoy anywhere, anytime\u2014no wi-fi required.\n- Strategic Gameplay: Start simple, think twice. Plan your moves and experience the satisfaction of clearing each puzzle.\n- Dynamic Obstacles:  Block generators, moving elevators, and other elements bring variety and spice to every level.\n- Colorful Visuals: Bright and gorgeous design makes every puzzle a joy to solve.\n\nBlock Out! is designed for puzzle lovers who enjoy both strategy and action. Download Block Out! now and explore the dynamic world of colorful puzzles."
+                },
+                "im:price": {
+                    "label": "Get",
+                    "attributes": {
+                        "amount": "0.00",
+                        "currency": "USD"
+                    }
+                },
+                "im:contentType": {
+                    "attributes": {
+                        "term": "Application",
+                        "label": "Application"
+                    }
+                },
+                "rights": {
+                    "label": "\u00a9 Grand Games A.\u015e."
+                },
+                "title": {
+                    "label": "Block Out! - Color Sort Puzzle - Grand Games A.\u015e."
+                },
+                "link": [
+                    {
+                        "attributes": {
+                            "rel": "alternate",
+                            "type": "text/html",
+                            "href": "https://apps.apple.com/us/app/block-out-color-sort-puzzle/id6752672568?uo=2"
+                        }
+                    },
+                    {
+                        "im:duration": {
+                            "label": "0"
+                        },
+                        "attributes": {
+                            "title": "Preview",
+                            "rel": "enclosure",
+                            "type": "image/jpeg",
+                            "href": "https://is1-ssl.mzstatic.com/image/thumb/PurpleSource211/v4/8e/3d/1b/8e3d1bbb-6f0e-1ec5-6d06-3e4277c9e1e2/CLEARTHEBOARD.jpg/1024x1024bb.jpg",
+                            "im:assetType": "preview"
+                        }
+                    }
+                ],
+                "id": {
+                    "label": "https://apps.apple.com/us/app/block-out-color-sort-puzzle/id6752672568?uo=2",
+                    "attributes": {
+                        "im:id": "6752672568",
+                        "im:bundleId": "com.grandgames.catblockjam"
+                    }
+                },
+                "im:artist": {
+                    "label": "Grand Games A.\u015e.",
+                    "attributes": {
+                        "href": "https://apps.apple.com/us/developer/grand-games-a-%C5%9F/id1742757639?uo=2"
+                    }
+                },
+                "category": {
+                    "attributes": {
+                        "im:id": "6014",
+                        "term": "Games",
+                        "scheme": "https://apps.apple.com/us/genre/ios-games/id6014?uo=2",
+                        "label": "Games"
+                    }
+                },
+                "im:releaseDate": {
+                    "label": "2025-10-31T00:00:00-07:00",
+                    "attributes": {
+                        "label": "October 31, 2025"
+                    }
+                }
+            }
+        ],
+        "updated": {
+            "label": "2026-08-25T21:34:03-07:00"
+        },
+        "rights": {
+            "label": "Copyright 2008 Apple Inc."
+        },
+        "title": {
+            "label": "iTunes Store: Top Free Applications in Games"
+        },
+        "icon": {
+            "label": "http://itunes.apple.com/favicon.ico"
+        },
+        "link": [
+            {
+                "attributes": {
+                    "rel": "alternate",
+                    "type": "text/html",
+                    "href": "https://apps.apple.com/WebObjects/MZStore.woa/wa/viewTop?cc=us&id=25180&popId=96"
+                }
+            },
+            {
+                "attributes": {
+                    "rel": "self",
+                    "href": "https://itunes.apple.com/us/rss/topfreeapplications/limit=3/genre=6014/json"
+                }
+            }
+        ],
+        "id": {
+            "label": "https://itunes.apple.com/us/rss/topfreeapplications/limit=3/genre=6014/json"
+        }
+    }
+}
