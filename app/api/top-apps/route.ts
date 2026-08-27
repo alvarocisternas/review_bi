@@ -1,40 +1,22 @@
 import { NextRequest, NextResponse } from "next/server";
+import { supabase } from "@/lib/supabase";
 import { GENRE_IDS } from "@/lib/genreIds";
-import { lookupApps } from "@/lib/appLookup";
 
-// How many top-free candidates to pull from the chart before filtering by
-// rating reliability — a wide pool so enough survive the threshold below.
-const POOL_SIZE = 100;
-
-// Below this many ratings, averageUserRating is too noisy to trust (a 5.0
-// from 3 reviews would otherwise outrank a 4.6 from 50,000).
-const MIN_RATING_COUNT = 50;
-
+// Previously fetched the legacy top-free chart + a batched /lookup call
+// live from Apple on every request. Now that scripts/seed-initial.ts has
+// precomputed the real top 50 per category into the `apps` table (see
+// that script and the sync cron for how it's kept fresh), this is a
+// straight read from Supabase — no live Apple calls here at all anymore.
 const RESULT_COUNT = 15;
 
-interface RawChartImage {
-  label?: string;
-  attributes?: { height?: string };
-}
-
-interface RawChartEntry {
-  id?: { attributes?: { "im:id"?: string } };
-  "im:name"?: { label?: string };
-  "im:artist"?: { label?: string };
-  "im:image"?: RawChartImage[];
-}
-
-interface ChartFeedResponse {
-  feed?: {
-    entry?: RawChartEntry[];
-  };
-}
-
-interface ChartCandidate {
-  trackId: number;
-  trackName: string;
-  artistName: string;
-  artworkUrl: string;
+interface AppsRow {
+  track_id: number;
+  track_name: string;
+  artist_name: string | null;
+  artwork_url_100: string | null;
+  primary_genre_name: string | null;
+  average_user_rating: number | null;
+  user_rating_count: number | null;
 }
 
 interface RankedApp {
@@ -47,38 +29,13 @@ interface RankedApp {
   userRatingCount: number;
 }
 
-function parseChartEntry(entry: RawChartEntry): ChartCandidate | null {
-  const trackIdLabel = entry.id?.attributes?.["im:id"];
-  const trackName = entry["im:name"]?.label;
-  const artistName = entry["im:artist"]?.label;
-  const images = entry["im:image"] ?? [];
-
-  if (!trackIdLabel || !trackName || !artistName || images.length === 0) {
-    return null;
-  }
-
-  const trackId = Number(trackIdLabel);
-  if (!Number.isFinite(trackId)) {
-    return null;
-  }
-
-  // Pick the highest-resolution artwork the feed offers.
-  const bestImage = images.reduce((best, image) => {
-    const height = Number(image.attributes?.height ?? 0);
-    const bestHeight = Number(best.attributes?.height ?? 0);
-    return height > bestHeight ? image : best;
-  }, images[0]);
-
-  if (!bestImage.label) {
-    return null;
-  }
-
-  return { trackId, trackName, artistName, artworkUrl: bestImage.label };
-}
-
 export async function GET(request: NextRequest) {
   const searchParams = request.nextUrl.searchParams;
   const genre = searchParams.get("genre");
+  // Kept for response-shape compatibility and as the query param callers
+  // already send; not used to filter the query below since the seed (and
+  // the sync cron) only ever populate country='cl' — there's nothing else
+  // in the cache to filter by yet.
   const country = searchParams.get("country")?.trim() || "cl";
 
   if (!genre || !(genre in GENRE_IDS)) {
@@ -88,80 +45,49 @@ export async function GET(request: NextRequest) {
     );
   }
 
-  const genreId = GENRE_IDS[genre];
+  // primary_genre_name is iTunes' own per-app genre string, confirmed
+  // (during the seed run) to match every GENRE_IDS key exactly — the same
+  // association the seed script itself used when writing these rows, so
+  // this filter is consistent with how the data actually got here.
+  // source IN (seed_category, seed_carousel): a carousel app can outrank
+  // its way into a category's real top 15 (e.g. Spotify in Music), so
+  // both sources need to be eligible, not just seed_category rows.
+  const { data, error } = await supabase
+    .from("apps")
+    .select("track_id, track_name, artist_name, artwork_url_100, primary_genre_name, average_user_rating, user_rating_count")
+    .eq("primary_genre_name", genre)
+    .in("source", ["seed_category", "seed_carousel"])
+    .order("average_user_rating", { ascending: false, nullsFirst: false })
+    .limit(RESULT_COUNT);
 
-  let candidates: ChartCandidate[];
-  try {
-    const chartUrl = `https://itunes.apple.com/${country}/rss/topfreeapplications/limit=${POOL_SIZE}/genre=${genreId}/json`;
-    const chartResponse = await fetch(chartUrl);
-
-    if (!chartResponse.ok) {
-      throw new Error(`chart feed responded with status ${chartResponse.status}`);
-    }
-
-    const chartData: ChartFeedResponse = await chartResponse.json();
-    const rawEntry = chartData.feed?.entry;
-    // Same Apple quirk as the reviews feed: a single-result feed collapses
-    // to an object instead of an array.
-    const entries: RawChartEntry[] = Array.isArray(rawEntry)
-      ? rawEntry
-      : rawEntry
-      ? [rawEntry]
-      : [];
-
-    candidates = entries
-      .map(parseChartEntry)
-      .filter((entry): entry is ChartCandidate => entry !== null);
-  } catch {
+  if (error) {
+    console.error("[top-apps] Supabase query failed:", error.message);
     return NextResponse.json(
       { error: "No se pudo obtener el top de apps para esta categoría" },
       { status: 502 }
     );
   }
 
-  if (candidates.length === 0) {
-    return NextResponse.json({ genre, country, results: [] });
-  }
+  const rows = (data ?? []) as AppsRow[];
 
-  let ratings: Map<number, { averageUserRating?: number; userRatingCount?: number }>;
-  try {
-    ratings = await lookupApps(candidates.map((c) => c.trackId));
-  } catch {
-    return NextResponse.json(
-      { error: "No se pudo obtener el top de apps para esta categoría" },
-      { status: 502 }
-    );
-  }
+  // No live fallback on <15 results (e.g. News currently has 39 candidates
+  // total, comfortably over 15, but if some category ever genuinely has
+  // fewer than 15 qualifying apps cached): returning fewer than 15 is the
+  // correct behavior here, not an error. Falling back to a live Apple
+  // call would reintroduce the exact per-request Apple dependency this
+  // migration exists to remove — the seed + the daily sync cron are what
+  // keep this table populated, not this endpoint.
+  const results: RankedApp[] = rows
+    .filter((row) => row.average_user_rating != null)
+    .map((row) => ({
+      trackId: row.track_id,
+      trackName: row.track_name,
+      artistName: row.artist_name ?? "",
+      artworkUrl100: row.artwork_url_100 ?? "",
+      primaryGenreName: row.primary_genre_name ?? genre,
+      averageUserRating: row.average_user_rating!,
+      userRatingCount: row.user_rating_count ?? 0,
+    }));
 
-  const ranked: RankedApp[] = [];
-  for (const candidate of candidates) {
-    const info = ratings.get(candidate.trackId);
-
-    if (
-      !info ||
-      info.averageUserRating == null ||
-      info.userRatingCount == null ||
-      info.userRatingCount < MIN_RATING_COUNT
-    ) {
-      continue;
-    }
-
-    ranked.push({
-      trackId: candidate.trackId,
-      trackName: candidate.trackName,
-      artistName: candidate.artistName,
-      artworkUrl100: candidate.artworkUrl,
-      primaryGenreName: genre,
-      averageUserRating: info.averageUserRating,
-      userRatingCount: info.userRatingCount,
-    });
-  }
-
-  ranked.sort((a, b) => b.averageUserRating - a.averageUserRating);
-
-  return NextResponse.json({
-    genre,
-    country,
-    results: ranked.slice(0, RESULT_COUNT),
-  });
+  return NextResponse.json({ genre, country, results });
 }
