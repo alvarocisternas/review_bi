@@ -75,11 +75,22 @@ export async function lookupApps(
   return map;
 }
 
-/** Thin wrapper over lookupApps for callers that only need trackName. */
+/**
+ * Thin wrapper over lookupApps for callers that only need trackName.
+ *
+ * `country` forwards straight to lookupApps — same reasoning applies here:
+ * omitting it can silently return 0 results for an app that only exists in
+ * a specific storefront. Found as a real bug during end-to-end testing:
+ * app/api/analyze's comparative mode called this without country, so an
+ * organic app not present in Apple's default/US lookup (but very much
+ * real in the Chilean store, e.g. Buda.com) fell back to the placeholder
+ * `App {trackId}` name instead of showing its real name in the dashboard.
+ */
 export async function lookupAppNames(
-  trackIds: number[]
+  trackIds: number[],
+  country?: string
 ): Promise<Map<number, string>> {
-  const apps = await lookupApps(trackIds);
+  const apps = await lookupApps(trackIds, country);
   const map = new Map<number, string>();
   for (const [trackId, info] of apps) {
     map.set(trackId, info.trackName);

@@ -60,10 +60,21 @@ function fromCachedRow(row: CachedReviewRow): Review {
 
 /**
  * Fetches and parses reviews live from the iTunes customer reviews RSS
- * feed. This is now only the fallback path — see fetchReviews below.
+ * feed, unconditionally — no cache read at all.
+ *
+ * Exported (not just fetchReviews' internal fallback path) for callers
+ * whose whole job IS refreshing the cache with live data — the sync cron
+ * (app/api/cron/sync-apps) and the seed script (scripts/seed-initial.ts).
+ * Those must NOT go through fetchReviews: calling the cache-first version
+ * from a refresh job would just read back what's already cached and never
+ * actually check Apple for new reviews — found as a real bug during
+ * end-to-end testing, where the cron's "refresh" step for an already-
+ * synced app turned out to be a same-data round trip through its own
+ * cache, silently defeating the whole point of the daily rotation.
+ *
  * Throws if the request to iTunes fails — callers decide how to surface that.
  */
-async function fetchReviewsLive(
+export async function fetchReviewsLive(
   trackId: string,
   country: string,
   page: number

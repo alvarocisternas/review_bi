@@ -32,7 +32,7 @@ import { createClient } from "@supabase/supabase-js";
 import { CAROUSEL_APPS } from "../lib/carouselApps";
 import { GENRE_IDS } from "../lib/genreIds";
 import { lookupApps, AppLookupInfo } from "../lib/appLookup";
-import { fetchReviews, Review } from "../lib/reviews";
+import { fetchReviewsLive, Review } from "../lib/reviews";
 
 // --- env loading -----------------------------------------------------
 // Manual .env.local parsing instead of relying on Next's dev-server-only
@@ -322,7 +322,7 @@ async function main() {
     let reviews: Review[] = [];
     let reviewsFetchOk = true;
     try {
-      const result = await fetchReviews(String(trackId), DEFAULT_COUNTRY);
+      const result = await fetchReviewsLive(String(trackId), DEFAULT_COUNTRY, 1);
       reviews = result.reviews;
     } catch (err) {
       reviewsFetchOk = false;

@@ -263,7 +263,7 @@ ${reviewsText}`;
   // name, never by raw trackId.
   let appNames: Map<number, string>;
   try {
-    appNames = await lookupAppNames(trackIds);
+    appNames = await lookupAppNames(trackIds, country);
   } catch {
     return NextResponse.json(
       { error: "No se pudo conectar con iTunes RSS" },

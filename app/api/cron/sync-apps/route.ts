@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabase } from "@/lib/supabase";
-import { fetchReviews, Review } from "@/lib/reviews";
+import { fetchReviewsLive, Review } from "@/lib/reviews";
 import { lookupApps, AppLookupInfo } from "@/lib/appLookup";
 
 // Vercel Hobby + Fluid Compute's hard ceiling is 300s; 280 leaves a 20s
@@ -180,7 +180,12 @@ export async function GET(request: NextRequest) {
       const country = app.country ?? DEFAULT_COUNTRY;
 
       try {
-        const { reviews } = await fetchReviews(String(app.track_id), country);
+        // fetchReviewsLive, not fetchReviews — this loop's whole job is
+        // refreshing the cache from Apple; going through the cache-first
+        // fetchReviews would just read back what's already in `reviews`
+        // for any app that's been synced before, and never actually check
+        // for new reviews.
+        const { reviews } = await fetchReviewsLive(String(app.track_id), country, 1);
 
         if (reviews.length > 0) {
           const { error: reviewsError } = await supabase
@@ -277,7 +282,9 @@ export async function GET(request: NextRequest) {
           throw new Error("trackId not found in iTunes Lookup");
         }
 
-        const { reviews } = await fetchReviews(String(pending.track_id), DEFAULT_COUNTRY);
+        // fetchReviewsLive here too, same reasoning as Part A above —
+        // onboarding an organic app should always hit Apple directly.
+        const { reviews } = await fetchReviewsLive(String(pending.track_id), DEFAULT_COUNTRY, 1);
 
         // Full row — this app doesn't exist in `apps` yet.
         const { error: appError } = await supabase.from("apps").upsert(
