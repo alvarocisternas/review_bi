@@ -1,3 +1,8 @@
+"use client";
+
+import { useState } from "react";
+import AccordionSection from "./AccordionSection";
+
 export interface SentimentData {
   label: "positivo" | "negativo" | "mixto";
   score: number;
@@ -20,6 +25,8 @@ interface AnalysisDashboardProps {
   data: SingleAnalysisData;
 }
 
+type SectionId = "complaints_features" | "themes";
+
 function scoreBarColor(score: number): string {
   if (score < 40) return "bg-red-500";
   if (score <= 70) return "bg-yellow-500";
@@ -30,9 +37,21 @@ export default function AnalysisDashboard({ data }: AnalysisDashboardProps) {
   const { sentiment, recurring_complaints, requested_features, highlighted_themes } =
     data;
 
+  // Same accordion mechanism as ComparativeDashboard: one open section at a
+  // time (or none), sentiment stays outside it as a fixed header.
+  const [openSection, setOpenSection] = useState<SectionId | null>(
+    "complaints_features"
+  );
+
+  function toggleSection(id: SectionId) {
+    setOpenSection((prev) => (prev === id ? null : id));
+  }
+
   return (
     <div className="mt-3 space-y-6">
-      {/* Sentiment */}
+      {/* Sentiment — always visible, fixed header (not part of the
+          accordion), same as the "apps analyzed" header in
+          ComparativeDashboard. */}
       <div>
         <div className="flex items-baseline justify-between">
           <span className="text-xl font-bold capitalize text-zinc-900 dark:text-zinc-100">
@@ -49,48 +68,56 @@ export default function AnalysisDashboard({ data }: AnalysisDashboardProps) {
         <p className="mt-2 text-sm text-zinc-500">{sentiment.justification}</p>
       </div>
 
-      {/* Complaints / requested features */}
-      <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
-        <div>
-          <h3 className="mb-2 text-sm font-semibold text-zinc-900 dark:text-zinc-100">
-            Quejas recurrentes
-          </h3>
-          {recurring_complaints.length > 0 ? (
-            <ul className="list-disc space-y-1 pl-5 text-sm text-zinc-700 dark:text-zinc-300">
-              {recurring_complaints.map((complaint, index) => (
-                <li key={index}>{complaint}</li>
-              ))}
-            </ul>
-          ) : (
-            <p className="text-sm text-zinc-500">
-              No se detectaron quejas recurrentes
-            </p>
-          )}
-        </div>
+      {/* Complaints / requested features — one accordion header, both
+          columns shown together when open. */}
+      <AccordionSection
+        title="Quejas recurrentes y features pedidas"
+        isOpen={openSection === "complaints_features"}
+        onToggle={() => toggleSection("complaints_features")}
+      >
+        <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
+          <div>
+            <h3 className="mb-2 text-sm font-semibold text-zinc-900 dark:text-zinc-100">
+              Quejas recurrentes
+            </h3>
+            {recurring_complaints.length > 0 ? (
+              <ul className="list-disc space-y-1 pl-5 text-sm text-zinc-700 dark:text-zinc-300">
+                {recurring_complaints.map((complaint, index) => (
+                  <li key={index}>{complaint}</li>
+                ))}
+              </ul>
+            ) : (
+              <p className="text-sm text-zinc-500">
+                No se detectaron quejas recurrentes
+              </p>
+            )}
+          </div>
 
-        <div>
-          <h3 className="mb-2 text-sm font-semibold text-zinc-900 dark:text-zinc-100">
-            Features más pedidas
-          </h3>
-          {requested_features.length > 0 ? (
-            <ul className="list-disc space-y-1 pl-5 text-sm text-zinc-700 dark:text-zinc-300">
-              {requested_features.map((feature, index) => (
-                <li key={index}>{feature}</li>
-              ))}
-            </ul>
-          ) : (
-            <p className="text-sm text-zinc-500">
-              No se detectaron features pedidas
-            </p>
-          )}
+          <div>
+            <h3 className="mb-2 text-sm font-semibold text-zinc-900 dark:text-zinc-100">
+              Features más pedidas
+            </h3>
+            {requested_features.length > 0 ? (
+              <ul className="list-disc space-y-1 pl-5 text-sm text-zinc-700 dark:text-zinc-300">
+                {requested_features.map((feature, index) => (
+                  <li key={index}>{feature}</li>
+                ))}
+              </ul>
+            ) : (
+              <p className="text-sm text-zinc-500">
+                No se detectaron features pedidas
+              </p>
+            )}
+          </div>
         </div>
-      </div>
+      </AccordionSection>
 
       {/* Highlighted themes */}
-      <div>
-        <h3 className="mb-2 text-sm font-semibold text-zinc-900 dark:text-zinc-100">
-          Temas destacados
-        </h3>
+      <AccordionSection
+        title="Temas destacados"
+        isOpen={openSection === "themes"}
+        onToggle={() => toggleSection("themes")}
+      >
         <div className="divide-y divide-zinc-200 dark:divide-zinc-800">
           {highlighted_themes.map((item, index) => (
             <div key={index} className="py-3 first:pt-0 last:pb-0">
@@ -103,7 +130,7 @@ export default function AnalysisDashboard({ data }: AnalysisDashboardProps) {
             </div>
           ))}
         </div>
-      </div>
+      </AccordionSection>
     </div>
   );
 }

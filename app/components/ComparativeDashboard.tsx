@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import type { ReactNode } from "react";
+import AccordionSection from "./AccordionSection";
 
 export interface AppAnalyzed {
   trackId: number;
@@ -46,47 +46,6 @@ type SectionId =
   | "complaints"
   | "differentiators"
   | "conclusion";
-
-interface AccordionSectionProps {
-  title: string;
-  isOpen: boolean;
-  onToggle: () => void;
-  children: ReactNode;
-}
-
-function AccordionSection({
-  title,
-  isOpen,
-  onToggle,
-  children,
-}: AccordionSectionProps) {
-  return (
-    <div className="border-b border-zinc-200 pb-3 dark:border-zinc-800">
-      <button
-        type="button"
-        onClick={onToggle}
-        aria-expanded={isOpen}
-        className="flex w-full cursor-pointer items-center justify-between rounded-md px-1 py-1.5 text-left transition-colors hover:bg-zinc-100 dark:hover:bg-zinc-800"
-      >
-        <h3
-          className={`transition-all duration-200 text-zinc-900 dark:text-zinc-100 ${
-            isOpen ? "text-base font-bold" : "text-sm font-semibold"
-          }`}
-        >
-          {title}
-        </h3>
-        <span
-          className={`text-zinc-500 transition-transform duration-200 dark:text-zinc-400 ${
-            isOpen ? "rotate-180" : "rotate-0"
-          }`}
-        >
-          ⌄
-        </span>
-      </button>
-      {isOpen && <div className="px-1 pt-2">{children}</div>}
-    </div>
-  );
-}
 
 export default function ComparativeDashboard({
   data,
