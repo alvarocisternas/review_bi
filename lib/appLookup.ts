@@ -3,6 +3,13 @@ export interface AppLookupInfo {
   trackName: string;
   averageUserRating?: number;
   userRatingCount?: number;
+  // Added for the sync cron (app/api/cron/sync-apps): needed to upsert a
+  // full apps row for organically-discovered apps, which don't have this
+  // metadata cached yet. Optional so the existing trackName/rating-only
+  // callers are unaffected.
+  artistName?: string;
+  artworkUrl100?: string;
+  primaryGenreName?: string;
 }
 
 interface RawLookupResult {
@@ -10,6 +17,9 @@ interface RawLookupResult {
   trackName?: string;
   averageUserRating?: number;
   userRatingCount?: number;
+  artistName?: string;
+  artworkUrl100?: string;
+  primaryGenreName?: string;
 }
 
 interface LookupResponse {
@@ -22,12 +32,23 @@ interface LookupResponse {
  * batched into a single request (comma-separated ids). A trackId with no
  * match on the Store is simply absent from the returned map — callers
  * should fall back to a placeholder for missing entries.
+ *
+ * `country` is optional and defaults to omitted (Apple's global/US-ish
+ * default), preserving every existing caller's current behavior exactly.
+ * Pass it explicitly when the rating numbers need to reflect a specific
+ * storefront — confirmed via a real side-by-side lookup (app/api/cron/
+ * sync-apps' manual test) that this isn't cosmetic: an app with 0 US
+ * ratings but real Chilean ones (Fintoc Me) came back as
+ * averageUserRating=0/userRatingCount=0 without country=CL, vs its real
+ * 4.625/16 with it.
  */
 export async function lookupApps(
-  trackIds: number[]
+  trackIds: number[],
+  country?: string
 ): Promise<Map<number, AppLookupInfo>> {
   const idsParam = trackIds.join(",");
-  const url = `https://itunes.apple.com/lookup?id=${idsParam}`;
+  const countryParam = country ? `&country=${encodeURIComponent(country)}` : "";
+  const url = `https://itunes.apple.com/lookup?id=${idsParam}${countryParam}`;
 
   const response = await fetch(url);
 
@@ -45,6 +66,9 @@ export async function lookupApps(
         trackName: result.trackName,
         averageUserRating: result.averageUserRating,
         userRatingCount: result.userRatingCount,
+        artistName: result.artistName,
+        artworkUrl100: result.artworkUrl100,
+        primaryGenreName: result.primaryGenreName,
       });
     }
   }

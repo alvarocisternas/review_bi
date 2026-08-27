@@ -1,4 +1,9 @@
 interface RawEntry {
+  // Apple's per-review permalink, e.g.
+  // "https://itunes.apple.com/us/review?id=123&type=Purple%20Software" —
+  // used as the real, stable id for upserting into the reviews table
+  // (see app/api/cron/sync-apps) so re-syncing never duplicates a review.
+  id?: { label?: string };
   author?: { name?: { label?: string } };
   title?: { label?: string };
   content?: { label?: string };
@@ -14,6 +19,7 @@ interface RssResponse {
 }
 
 export interface Review {
+  id: string;
   author: string;
   title: string;
   content: string;
@@ -69,9 +75,11 @@ export async function fetchReviews(
     .filter((entry) => {
       const ratingLabel = entry["im:rating"]?.label;
       const authorName = entry.author?.name?.label;
-      return ratingLabel != null && authorName != null;
+      const idLabel = entry.id?.label;
+      return ratingLabel != null && authorName != null && idLabel != null;
     })
     .map((entry) => ({
+      id: entry.id!.label!,
       author: entry.author!.name!.label!,
       title: entry.title?.label ?? "",
       content: entry.content?.label ?? "",
