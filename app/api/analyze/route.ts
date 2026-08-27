@@ -197,9 +197,22 @@ export async function POST(request: NextRequest) {
     const reviewsResult = reviewsByTrackId.get(trackIds[0])!;
 
     if (reviewsResult.reviews.length < MIN_REVIEWS_REQUIRED) {
+      // Resolve the real name for the error message — same criterion
+      // already used in comparative mode, so a business error never shows
+      // a raw trackId to the user. Looked up lazily, only on this error
+      // path, so the common (enough-reviews) case doesn't pay for it.
+      let appName = `App ${trackIds[0]}`;
+      try {
+        const names = await lookupAppNames([trackIds[0]], country);
+        appName = names.get(trackIds[0]) ?? appName;
+      } catch {
+        // Keep the placeholder — a name-lookup failure here shouldn't
+        // turn an already-known 422 into a 502.
+      }
+
       return NextResponse.json(
         {
-          error: `La app ${trackIds[0]} no tiene suficientes reseñas para un análisis confiable`,
+          error: `${appName} no tiene suficientes reseñas para un análisis confiable`,
         },
         { status: 422 }
       );

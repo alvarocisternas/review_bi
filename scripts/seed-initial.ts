@@ -32,7 +32,13 @@ import { createClient } from "@supabase/supabase-js";
 import { CAROUSEL_APPS } from "../lib/carouselApps";
 import { GENRE_IDS } from "../lib/genreIds";
 import { lookupApps, AppLookupInfo } from "../lib/appLookup";
-import { fetchReviewsLive, Review } from "../lib/reviews";
+// Type-only — erased at compile time. fetchReviewsLive/toReviewInsertRows
+// are imported dynamically inside main() instead of statically here: see
+// the comment at that import for why (lib/reviews.ts pulls in
+// lib/supabase.ts at module scope, which needs process.env populated
+// first — a static import here would get hoisted ahead of this script's
+// own env-loading code).
+import type { Review } from "../lib/reviews";
 
 // --- env loading -----------------------------------------------------
 // Manual .env.local parsing instead of relying on Next's dev-server-only
@@ -198,23 +204,11 @@ async function lookupUncached(trackIds: number[]): Promise<void> {
   }
 }
 
-function toReviewRows(trackId: number, reviews: Review[]) {
-  const fetchedAt = new Date().toISOString();
-  return reviews.map((review) => ({
-    id: review.id,
-    track_id: trackId,
-    author: review.author,
-    title: review.title,
-    content: review.content,
-    rating: review.rating,
-    review_date: review.date,
-    app_version: review.version,
-    country: DEFAULT_COUNTRY,
-    fetched_at: fetchedAt,
-  }));
-}
-
 async function main() {
+  // Deferred dynamic import — see the note by the `import type { Review }`
+  // line above for why this can't be a static top-of-file import.
+  const { fetchReviewsLive, toReviewInsertRows } = await import("../lib/reviews");
+
   const startedAt = Date.now();
   console.log("=== seed-initial: started ===");
 
@@ -330,6 +324,26 @@ async function main() {
       console.log(`  [${i + 1}/${uniqueTrackIds.length}] track_id=${trackId} "${trackName}": reviews FAILED (${errorMessage(err)})`);
     }
 
+    // ALV-85: reviews are saved (and marked confirmed-empty) BEFORE the
+    // apps upsert, and last_synced_at/reviews_confirmed_empty only reflect
+    // the combined outcome of both the fetch AND the save — this is
+    // exactly the gap that let Santander Chile's original seed run record
+    // last_synced_at as set despite 0 real rows ever landing in `reviews`
+    // (its live fetch that run returned an empty result — no exception,
+    // HTTP 200 — indistinguishable at the time from a genuinely 0-review
+    // app). reviewsSavedOk starts as reviewsFetchOk and is downgraded to
+    // false if there were reviews to save but the save itself failed.
+    let reviewsSavedOk = reviewsFetchOk;
+    if (reviewsFetchOk && reviews.length > 0) {
+      const { error: reviewsError } = await supabase
+        .from("reviews")
+        .upsert(toReviewInsertRows(trackId, DEFAULT_COUNTRY, reviews), { onConflict: "id" });
+      if (reviewsError) {
+        reviewsSavedOk = false;
+        console.log(`  [${i + 1}/${uniqueTrackIds.length}] track_id=${trackId} "${trackName}": reviews upsert FAILED (${reviewsError.message})`);
+      }
+    }
+
     const { error: appError } = await supabase.from("apps").upsert(
       {
         track_id: trackId,
@@ -341,11 +355,13 @@ async function main() {
         user_rating_count: info?.userRatingCount ?? null,
         country: DEFAULT_COUNTRY,
         source,
-        // Left null on a reviews-fetch failure (on purpose): the app still
-        // gets seeded with its metadata now, but stays sorted first for
-        // the regular cron's Part A to pick up and retry the reviews on
-        // its next run, instead of this script needing its own retry loop.
-        last_synced_at: reviewsFetchOk ? new Date().toISOString() : null,
+        // Left null/false on a reviews fetch-or-save failure (on purpose):
+        // the app still gets seeded with its metadata now, but stays
+        // sorted first for the regular cron's Part A to pick up and retry
+        // the reviews on its next run, instead of this script needing its
+        // own retry loop.
+        last_synced_at: reviewsSavedOk ? new Date().toISOString() : null,
+        reviews_confirmed_empty: reviewsSavedOk && reviews.length === 0,
       },
       { onConflict: "track_id" }
     );
@@ -356,15 +372,8 @@ async function main() {
       continue;
     }
 
-    if (reviewsFetchOk) {
-      if (reviews.length > 0) {
-        const { error: reviewsError } = await supabase
-          .from("reviews")
-          .upsert(toReviewRows(trackId, reviews), { onConflict: "id" });
-        if (reviewsError) {
-          console.log(`  [${i + 1}/${uniqueTrackIds.length}] track_id=${trackId} "${trackName}": reviews upsert FAILED (${reviewsError.message})`);
-        }
-      } else {
+    if (reviewsSavedOk) {
+      if (reviews.length === 0) {
         zeroReviewApps++;
       }
       console.log(`  [${i + 1}/${uniqueTrackIds.length}] track_id=${trackId} "${trackName}" (${source}): OK, ${reviews.length} reviews`);

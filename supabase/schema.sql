@@ -31,9 +31,22 @@ create table if not exists apps (
   average_user_rating  numeric,
   user_rating_count    integer,
   country              text default 'cl',
-  source               text,                      -- 'seed_carousel' | 'seed_category' | 'organic'
+  source               text,                      -- 'seed_carousel' | 'seed_category' | 'seed_guaranteed' | 'organic'
   last_synced_at       timestamptz,
-  created_at           timestamptz default now()
+  created_at           timestamptz default now(),
+  -- ALV-85 fix: last_synced_at alone isn't proof reviews were actually
+  -- saved — Santander Chile (track_id 604982236) had last_synced_at set
+  -- from the initial seed run, but 0 rows in `reviews`, because that
+  -- run's live RSS fetch for it silently returned an empty result (HTTP
+  -- 200, no exception) despite Apple genuinely having ~50k+ reviews for
+  -- it — indistinguishable, at the code level, from a real 0-review app,
+  -- until a later request confirmed it isn't. reviews_confirmed_empty is
+  -- only ever set true when a fetch AND the subsequent reviews save (if
+  -- there were any rows to save) both completed successfully in the same
+  -- run — see lib/reviews.ts and app/api/cron/sync-apps for every write
+  -- site. It's the signal fetchReviews uses to skip a live re-fetch, not
+  -- last_synced_at.
+  reviews_confirmed_empty boolean not null default false
 );
 
 -- ---------------------------------------------------------------------
@@ -55,6 +68,13 @@ create table if not exists reviews (
 
 -- Speeds up "all reviews for this app" lookups, the main query shape.
 create index if not exists reviews_track_id_idx on reviews (track_id);
+
+-- ALV-85 fix, applied to the already-existing production table: the
+-- column is defined inline above for a from-scratch CREATE TABLE, but
+-- `create table if not exists` is a no-op against a table that already
+-- exists — this ALTER is what actually reaches the live `apps` table.
+-- Safe to re-run (IF NOT EXISTS).
+alter table apps add column if not exists reviews_confirmed_empty boolean not null default false;
 
 -- ---------------------------------------------------------------------
 -- pending_apps — queue of organically-searched apps not yet cached, for

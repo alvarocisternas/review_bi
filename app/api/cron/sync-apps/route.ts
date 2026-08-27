@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabase } from "@/lib/supabase";
-import { fetchReviewsLive, Review } from "@/lib/reviews";
+import { fetchReviewsLive, toReviewInsertRows } from "@/lib/reviews";
 import { lookupApps, AppLookupInfo } from "@/lib/appLookup";
 
 // Vercel Hobby + Fluid Compute's hard ceiling is 300s; 280 leaves a 20s
@@ -22,9 +22,11 @@ const REQUEST_DELAY_MS = 400;
 
 // --- Part A: fixed-set rotation -------------------------------------------
 // The fixed set is the carousel (21 apps) + top 50 of each of the ~15
-// categories tracked by /api/top-apps ≈ 750 apps total. Refreshing 110 of
-// them per daily run means every app cycles back roughly every
-// 750 / 110 ≈ 6.8 days — "about once a week", as asked.
+// categories tracked by /api/top-apps + the guaranteed list
+// (lib/guaranteedApps.ts — apps that must stay synced regardless of
+// whether they'd naturally place in their category's top 50) ≈ 750+ apps
+// total. Refreshing 110 of them per daily run means every app cycles back
+// roughly every 750 / 110 ≈ 6.8 days — "about once a week", as asked.
 const FIXED_SET_BATCH_SIZE = 110;
 // iTunes' /lookup takes a comma-separated id list with no documented hard
 // cap, but chunking keeps each individual request modest instead of
@@ -78,26 +80,6 @@ interface PendingAppRow {
   attempts: number;
 }
 
-// Shared review-row builder for both parts — `fetched_at` is set
-// explicitly on every upsert (not left to the column default, which only
-// fires on insert) so it always reflects the last time we confirmed this
-// review still exists on iTunes.
-function toReviewRows(trackId: number, country: string, reviews: Review[]) {
-  const fetchedAt = new Date().toISOString();
-  return reviews.map((review) => ({
-    id: review.id,
-    track_id: trackId,
-    author: review.author,
-    title: review.title,
-    content: review.content,
-    rating: review.rating,
-    review_date: review.date,
-    app_version: review.version,
-    country,
-    fetched_at: fetchedAt,
-  }));
-}
-
 export async function GET(request: NextRequest) {
   const startedAt = Date.now();
   const elapsed = () => Date.now() - startedAt;
@@ -130,7 +112,7 @@ export async function GET(request: NextRequest) {
   const { data: fixedAppsData, error: fixedSelectError } = await supabase
     .from("apps")
     .select("track_id, country, track_name")
-    .in("source", ["seed_carousel", "seed_category"])
+    .in("source", ["seed_carousel", "seed_category", "seed_guaranteed"])
     .order("last_synced_at", { ascending: true, nullsFirst: true })
     .limit(FIXED_SET_BATCH_SIZE);
 
@@ -190,12 +172,17 @@ export async function GET(request: NextRequest) {
         if (reviews.length > 0) {
           const { error: reviewsError } = await supabase
             .from("reviews")
-            .upsert(toReviewRows(app.track_id, country, reviews), { onConflict: "id" });
+            .upsert(toReviewInsertRows(app.track_id, country, reviews), { onConflict: "id" });
           if (reviewsError) {
             throw new Error(`reviews upsert failed: ${reviewsError.message}`);
           }
         }
 
+        // Only reached once the reviews above are safely saved (or there
+        // were none to save) — last_synced_at/reviews_confirmed_empty are
+        // ALV-85's fix, so they must only ever be written together with a
+        // confirmed-successful reviews step, never on their own.
+        //
         // Partial merge-update — columns not included here are left
         // untouched by PostgREST's upsert on the conflict/update path.
         // track_name is the one exception: Postgres validates NOT NULL
@@ -211,6 +198,7 @@ export async function GET(request: NextRequest) {
           track_id: app.track_id,
           track_name: info?.trackName ?? app.track_name,
           last_synced_at: new Date().toISOString(),
+          reviews_confirmed_empty: reviews.length === 0,
         };
         if (info?.averageUserRating != null) {
           appUpdate.average_user_rating = info.averageUserRating;
@@ -286,7 +274,23 @@ export async function GET(request: NextRequest) {
         // onboarding an organic app should always hit Apple directly.
         const { reviews } = await fetchReviewsLive(String(pending.track_id), DEFAULT_COUNTRY, 1);
 
-        // Full row — this app doesn't exist in `apps` yet.
+        // Reviews saved BEFORE the apps upsert on purpose (this order was
+        // flipped during the ALV-85 fix): if the reviews save fails below,
+        // it throws and we never reach the apps upsert at all, so
+        // last_synced_at/reviews_confirmed_empty never get written on a
+        // partial success — same bug class as Santander Chile, just in
+        // this code path instead of the seed script.
+        if (reviews.length > 0) {
+          const { error: reviewsError } = await supabase
+            .from("reviews")
+            .upsert(toReviewInsertRows(pending.track_id, DEFAULT_COUNTRY, reviews), { onConflict: "id" });
+          if (reviewsError) {
+            throw new Error(`reviews upsert failed: ${reviewsError.message}`);
+          }
+        }
+
+        // Full row — this app doesn't exist in `apps` yet. Only reached
+        // once the reviews above are safely saved (or there were none).
         const { error: appError } = await supabase.from("apps").upsert(
           {
             track_id: pending.track_id,
@@ -299,20 +303,12 @@ export async function GET(request: NextRequest) {
             country: DEFAULT_COUNTRY,
             source: "organic",
             last_synced_at: new Date().toISOString(),
+            reviews_confirmed_empty: reviews.length === 0,
           },
           { onConflict: "track_id" }
         );
         if (appError) {
           throw new Error(`apps upsert failed: ${appError.message}`);
-        }
-
-        if (reviews.length > 0) {
-          const { error: reviewsError } = await supabase
-            .from("reviews")
-            .upsert(toReviewRows(pending.track_id, DEFAULT_COUNTRY, reviews), { onConflict: "id" });
-          if (reviewsError) {
-            throw new Error(`reviews upsert failed: ${reviewsError.message}`);
-          }
         }
 
         // Successfully onboarded — even with 0 reviews, per the Fintoc Me
