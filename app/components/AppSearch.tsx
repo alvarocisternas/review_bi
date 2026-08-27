@@ -429,10 +429,16 @@ export default function AppSearch() {
 
             {analysisResult && (
               <div className="mb-3 flex justify-end">
+                {/* Same container treatment as "Analizar esta
+                    app"/"Comparar" (padding, rounded-md, text-sm
+                    font-medium) so it reads as an equally clickable
+                    action — bordered/outlined instead of solid-filled to
+                    mark it as the secondary action next to that primary
+                    button. */}
                 <button
                   type="button"
                   onClick={handleNewComparison}
-                  className="text-sm font-medium text-zinc-600 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-100"
+                  className="rounded-md border border-zinc-300 bg-white px-4 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-100 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:bg-zinc-800"
                 >
                   Nueva comparación
                 </button>
