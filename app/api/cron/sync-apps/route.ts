@@ -3,10 +3,12 @@ import { supabase } from "@/lib/supabase";
 import { fetchReviews, Review } from "@/lib/reviews";
 import { lookupApps, AppLookupInfo } from "@/lib/appLookup";
 
-// Vercel Hobby + Fluid Compute's hard ceiling for a single invocation.
-// TOTAL_TIME_BUDGET_MS below stays well under this; maxDuration is just
-// the outer safety net.
-export const maxDuration = 300;
+// Vercel Hobby + Fluid Compute's hard ceiling is 300s; 280 leaves a 20s
+// safety margin on top of that. TOTAL_TIME_BUDGET_MS below (270s) stays
+// under this on its own — maxDuration is the outer safety net in case the
+// in-code budget check gets skipped somehow (e.g. a hang inside a single
+// fetch/upsert call that never reaches the next elapsed() check).
+export const maxDuration = 280;
 
 const DEFAULT_COUNTRY = "cl";
 
