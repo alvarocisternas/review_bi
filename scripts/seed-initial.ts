@@ -413,6 +413,39 @@ async function main() {
       continue;
     }
 
+    // ALV-88 fix: create/update the `apps` row BEFORE fetching/saving
+    // reviews, not after. For a trackId genuinely new to the table, the
+    // old reviews-before-apps order (see ALV-85 note below) meant the
+    // reviews upsert always failed its foreign key to apps.track_id,
+    // since that row didn't exist yet — confirmed the hard way during
+    // this ALV-88 run, which hit exactly that for ~450 brand-new apps.
+    // last_synced_at/reviews_confirmed_empty are deliberately left out of
+    // this payload: on INSERT they take their schema defaults (null /
+    // false — "not yet confirmed synced"), and on a conflict update
+    // PostgREST leaves columns absent from the payload untouched, so this
+    // can never stomp a real value already on the row (e.g. this trackId
+    // exists but toSync included it because its LAST run never
+    // confirmed — this upsert must not reset that history).
+    const { error: appCreateError } = await supabase.from("apps").upsert(
+      {
+        track_id: trackId,
+        track_name: trackName,
+        artist_name: info?.artistName ?? fallback?.artistName ?? null,
+        artwork_url_100: info?.artworkUrl100 ?? fallback?.artworkUrl100 ?? null,
+        primary_genre_name: info?.primaryGenreName ?? null,
+        average_user_rating: info?.averageUserRating ?? null,
+        user_rating_count: info?.userRatingCount ?? null,
+        country: DEFAULT_COUNTRY,
+        source,
+      },
+      { onConflict: "track_id" }
+    );
+    if (appCreateError) {
+      console.log(`  [${i + 1}/${toSync.length}] track_id=${trackId} "${trackName}": apps upsert FAILED (${appCreateError.message})`);
+      await sleep(REQUEST_DELAY_MS);
+      continue;
+    }
+
     let reviews: Review[] = [];
     let reviewsFetchOk = true;
     try {
@@ -424,10 +457,9 @@ async function main() {
       console.log(`  [${i + 1}/${toSync.length}] track_id=${trackId} "${trackName}": reviews FAILED (${errorMessage(err)})`);
     }
 
-    // ALV-85: reviews are saved (and marked confirmed-empty) BEFORE the
-    // apps upsert, and last_synced_at/reviews_confirmed_empty only reflect
-    // the combined outcome of both the fetch AND the save — this is
-    // exactly the gap that let Santander Chile's original seed run record
+    // ALV-85: last_synced_at/reviews_confirmed_empty only reflect the
+    // combined outcome of both the fetch AND the save — this is exactly
+    // the gap that let Santander Chile's original seed run record
     // last_synced_at as set despite 0 real rows ever landing in `reviews`
     // (its live fetch that run returned an empty result — no exception,
     // HTTP 200 — indistinguishable at the time from a genuinely 0-review
@@ -444,39 +476,30 @@ async function main() {
       }
     }
 
-    const { error: appError } = await supabase.from("apps").upsert(
-      {
-        track_id: trackId,
-        track_name: trackName,
-        artist_name: info?.artistName ?? fallback?.artistName ?? null,
-        artwork_url_100: info?.artworkUrl100 ?? fallback?.artworkUrl100 ?? null,
-        primary_genre_name: info?.primaryGenreName ?? null,
-        average_user_rating: info?.averageUserRating ?? null,
-        user_rating_count: info?.userRatingCount ?? null,
-        country: DEFAULT_COUNTRY,
-        source,
-        // Left null/false on a reviews fetch-or-save failure (on purpose):
-        // the app still gets seeded with its metadata now, but stays
-        // sorted first for the regular cron's Part A to pick up and retry
-        // the reviews on its next run, instead of this script needing its
-        // own retry loop.
-        last_synced_at: reviewsSavedOk ? new Date().toISOString() : null,
-        reviews_confirmed_empty: reviewsSavedOk && reviews.length === 0,
-      },
-      { onConflict: "track_id" }
-    );
-
-    if (appError) {
-      console.log(`  [${i + 1}/${toSync.length}] track_id=${trackId} "${trackName}": apps upsert FAILED (${appError.message})`);
-      await sleep(REQUEST_DELAY_MS);
-      continue;
-    }
-
+    // Only reached once the reviews above are safely saved (or there were
+    // none) — a plain update() (not upsert) so it only ever touches these
+    // two columns on the row created above. Left untouched (i.e. this
+    // update is skipped) on a fetch-or-save failure, on purpose: the app
+    // still got its metadata seeded above, but its last_synced_at stays
+    // whatever it was (null for a brand-new row), so it sorts first for
+    // the regular cron's Part A to pick up and retry on its next run,
+    // instead of this script needing its own retry loop.
     if (reviewsSavedOk) {
-      if (reviews.length === 0) {
-        zeroReviewApps++;
+      const { error: syncError } = await supabase
+        .from("apps")
+        .update({
+          last_synced_at: new Date().toISOString(),
+          reviews_confirmed_empty: reviews.length === 0,
+        })
+        .eq("track_id", trackId);
+      if (syncError) {
+        console.log(`  [${i + 1}/${toSync.length}] track_id=${trackId} "${trackName}": apps sync-status update FAILED (${syncError.message})`);
+      } else {
+        if (reviews.length === 0) {
+          zeroReviewApps++;
+        }
+        console.log(`  [${i + 1}/${toSync.length}] track_id=${trackId} "${trackName}" (${source}): OK, ${reviews.length} reviews`);
       }
-      console.log(`  [${i + 1}/${toSync.length}] track_id=${trackId} "${trackName}" (${source}): OK, ${reviews.length} reviews`);
     }
 
     await sleep(REQUEST_DELAY_MS);

@@ -270,28 +270,22 @@ export async function GET(request: NextRequest) {
           throw new Error("trackId not found in iTunes Lookup");
         }
 
-        // fetchReviewsLive here too, same reasoning as Part A above —
-        // onboarding an organic app should always hit Apple directly.
-        const { reviews } = await fetchReviewsLive(String(pending.track_id), DEFAULT_COUNTRY, 1);
-
-        // Reviews saved BEFORE the apps upsert on purpose (this order was
-        // flipped during the ALV-85 fix): if the reviews save fails below,
-        // it throws and we never reach the apps upsert at all, so
-        // last_synced_at/reviews_confirmed_empty never get written on a
-        // partial success — same bug class as Santander Chile, just in
-        // this code path instead of the seed script.
-        if (reviews.length > 0) {
-          const { error: reviewsError } = await supabase
-            .from("reviews")
-            .upsert(toReviewInsertRows(pending.track_id, DEFAULT_COUNTRY, reviews), { onConflict: "id" });
-          if (reviewsError) {
-            throw new Error(`reviews upsert failed: ${reviewsError.message}`);
-          }
-        }
-
-        // Full row — this app doesn't exist in `apps` yet. Only reached
-        // once the reviews above are safely saved (or there were none).
-        const { error: appError } = await supabase.from("apps").upsert(
+        // ALV-88 fix: create the `apps` row BEFORE fetching/saving reviews,
+        // not after. This app doesn't exist in `apps` yet, and
+        // `reviews.track_id` has a foreign key to `apps.track_id` — the
+        // reviews-before-apps order the ALV-85 fix introduced (see below)
+        // silently assumed the row already existed, which is true for a
+        // refresh but false for a brand-new onboarding, so every reviews
+        // upsert here was failing its FK constraint (caught by the outer
+        // try/catch, burning a pending_apps attempt, forever — confirmed
+        // the hard way during ALV-88's top-100 category seed, which hit
+        // the identical bug in scripts/seed-initial.ts).
+        // last_synced_at/reviews_confirmed_empty are deliberately left out
+        // of this payload: on INSERT they take their schema defaults
+        // (null / false — "not yet confirmed synced"), and on a conflict
+        // update PostgREST leaves columns absent from the payload
+        // untouched, so this can never stomp a real value on a re-run.
+        const { error: appCreateError } = await supabase.from("apps").upsert(
           {
             track_id: pending.track_id,
             track_name: info.trackName,
@@ -302,13 +296,40 @@ export async function GET(request: NextRequest) {
             user_rating_count: info.userRatingCount ?? null,
             country: DEFAULT_COUNTRY,
             source: "organic",
-            last_synced_at: new Date().toISOString(),
-            reviews_confirmed_empty: reviews.length === 0,
           },
           { onConflict: "track_id" }
         );
+        if (appCreateError) {
+          throw new Error(`apps upsert failed: ${appCreateError.message}`);
+        }
+
+        // fetchReviewsLive here too, same reasoning as Part A above —
+        // onboarding an organic app should always hit Apple directly.
+        const { reviews } = await fetchReviewsLive(String(pending.track_id), DEFAULT_COUNTRY, 1);
+
+        if (reviews.length > 0) {
+          const { error: reviewsError } = await supabase
+            .from("reviews")
+            .upsert(toReviewInsertRows(pending.track_id, DEFAULT_COUNTRY, reviews), { onConflict: "id" });
+          if (reviewsError) {
+            throw new Error(`reviews upsert failed: ${reviewsError.message}`);
+          }
+        }
+
+        // Only reached once the reviews above are safely saved (or there
+        // were none) — same ALV-85 invariant as Part A: never mark
+        // last_synced_at/reviews_confirmed_empty until the save is
+        // actually confirmed. A plain update() (not upsert) so it only
+        // ever touches these two columns on the row created above.
+        const { error: appError } = await supabase
+          .from("apps")
+          .update({
+            last_synced_at: new Date().toISOString(),
+            reviews_confirmed_empty: reviews.length === 0,
+          })
+          .eq("track_id", pending.track_id);
         if (appError) {
-          throw new Error(`apps upsert failed: ${appError.message}`);
+          throw new Error(`apps update failed: ${appError.message}`);
         }
 
         // Successfully onboarded — even with 0 reviews, per the Fintoc Me
