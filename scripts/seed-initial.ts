@@ -42,6 +42,7 @@ import { createClient } from "@supabase/supabase-js";
 import { CAROUSEL_APPS } from "../lib/carouselApps";
 import { GENRE_IDS } from "../lib/genreIds";
 import { lookupApps, AppLookupInfo } from "../lib/appLookup";
+import { supabaseTimeoutSignal } from "../lib/supabaseTimeout";
 // Type-only — erased at compile time. fetchReviewsLive/toReviewInsertRows
 // are imported dynamically inside main() instead of statically here: see
 // the comment at that import for why (lib/reviews.ts pulls in
@@ -323,7 +324,8 @@ async function main() {
     const { data, error } = await supabase
       .from("apps")
       .select("track_id, source, last_synced_at")
-      .in("track_id", idsChunk);
+      .in("track_id", idsChunk)
+      .abortSignal(supabaseTimeoutSignal());
     if (error) {
       console.error(`  ! failed to query existing apps chunk: ${error.message}`);
       continue;
@@ -373,7 +375,8 @@ async function main() {
     if (!trackName) continue; // can't upsert without satisfying the NOT NULL column; leave as-is
     const { error } = await supabase
       .from("apps")
-      .upsert({ track_id: trackId, track_name: trackName, source: finalSource }, { onConflict: "track_id" });
+      .upsert({ track_id: trackId, track_name: trackName, source: finalSource }, { onConflict: "track_id" })
+      .abortSignal(supabaseTimeoutSignal());
     if (error) {
       console.log(`  ! source correction FAILED for track_id=${trackId}: ${error.message}`);
     } else {
@@ -426,20 +429,23 @@ async function main() {
     // can never stomp a real value already on the row (e.g. this trackId
     // exists but toSync included it because its LAST run never
     // confirmed — this upsert must not reset that history).
-    const { error: appCreateError } = await supabase.from("apps").upsert(
-      {
-        track_id: trackId,
-        track_name: trackName,
-        artist_name: info?.artistName ?? fallback?.artistName ?? null,
-        artwork_url_100: info?.artworkUrl100 ?? fallback?.artworkUrl100 ?? null,
-        primary_genre_name: info?.primaryGenreName ?? null,
-        average_user_rating: info?.averageUserRating ?? null,
-        user_rating_count: info?.userRatingCount ?? null,
-        country: DEFAULT_COUNTRY,
-        source,
-      },
-      { onConflict: "track_id" }
-    );
+    const { error: appCreateError } = await supabase
+      .from("apps")
+      .upsert(
+        {
+          track_id: trackId,
+          track_name: trackName,
+          artist_name: info?.artistName ?? fallback?.artistName ?? null,
+          artwork_url_100: info?.artworkUrl100 ?? fallback?.artworkUrl100 ?? null,
+          primary_genre_name: info?.primaryGenreName ?? null,
+          average_user_rating: info?.averageUserRating ?? null,
+          user_rating_count: info?.userRatingCount ?? null,
+          country: DEFAULT_COUNTRY,
+          source,
+        },
+        { onConflict: "track_id" }
+      )
+      .abortSignal(supabaseTimeoutSignal());
     if (appCreateError) {
       console.log(`  [${i + 1}/${toSync.length}] track_id=${trackId} "${trackName}": apps upsert FAILED (${appCreateError.message})`);
       await sleep(REQUEST_DELAY_MS);
@@ -469,7 +475,8 @@ async function main() {
     if (reviewsFetchOk && reviews.length > 0) {
       const { error: reviewsError } = await supabase
         .from("reviews")
-        .upsert(toReviewInsertRows(trackId, DEFAULT_COUNTRY, reviews), { onConflict: "id" });
+        .upsert(toReviewInsertRows(trackId, DEFAULT_COUNTRY, reviews), { onConflict: "id" })
+        .abortSignal(supabaseTimeoutSignal());
       if (reviewsError) {
         reviewsSavedOk = false;
         console.log(`  [${i + 1}/${toSync.length}] track_id=${trackId} "${trackName}": reviews upsert FAILED (${reviewsError.message})`);
@@ -491,7 +498,8 @@ async function main() {
           last_synced_at: new Date().toISOString(),
           reviews_confirmed_empty: reviews.length === 0,
         })
-        .eq("track_id", trackId);
+        .eq("track_id", trackId)
+        .abortSignal(supabaseTimeoutSignal());
       if (syncError) {
         console.log(`  [${i + 1}/${toSync.length}] track_id=${trackId} "${trackName}": apps sync-status update FAILED (${syncError.message})`);
       } else {
@@ -511,26 +519,32 @@ async function main() {
   // ------------------------------------------------------------------
   const { count: totalApps } = await supabase
     .from("apps")
-    .select("*", { count: "exact", head: true });
+    .select("*", { count: "exact", head: true })
+    .abortSignal(supabaseTimeoutSignal());
   const { count: carouselCount } = await supabase
     .from("apps")
     .select("*", { count: "exact", head: true })
-    .eq("source", "seed_carousel");
+    .eq("source", "seed_carousel")
+    .abortSignal(supabaseTimeoutSignal());
   const { count: categoryCount } = await supabase
     .from("apps")
     .select("*", { count: "exact", head: true })
-    .eq("source", "seed_category");
+    .eq("source", "seed_category")
+    .abortSignal(supabaseTimeoutSignal());
   const { count: guaranteedCount } = await supabase
     .from("apps")
     .select("*", { count: "exact", head: true })
-    .eq("source", "seed_guaranteed");
+    .eq("source", "seed_guaranteed")
+    .abortSignal(supabaseTimeoutSignal());
   const { count: organicCount } = await supabase
     .from("apps")
     .select("*", { count: "exact", head: true })
-    .eq("source", "organic");
+    .eq("source", "organic")
+    .abortSignal(supabaseTimeoutSignal());
   const { count: totalReviews } = await supabase
     .from("reviews")
-    .select("*", { count: "exact", head: true });
+    .select("*", { count: "exact", head: true })
+    .abortSignal(supabaseTimeoutSignal());
 
   const elapsedMs = Date.now() - startedAt;
 

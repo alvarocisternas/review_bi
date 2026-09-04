@@ -18,6 +18,7 @@ import { dirname, resolve } from "node:path";
 import { createClient } from "@supabase/supabase-js";
 import { GUARANTEED_APPS } from "../lib/guaranteedApps";
 import { lookupApps } from "../lib/appLookup";
+import { supabaseTimeoutSignal } from "../lib/supabaseTimeout";
 // Type-only — erased at compile time, so importing it statically never
 // triggers lib/reviews.ts's module body (which imports lib/supabase.ts,
 // see below) to run.
@@ -82,7 +83,8 @@ async function main() {
   const { data: existingRows } = await supabase
     .from("apps")
     .select("track_id, source")
-    .in("track_id", trackIds);
+    .in("track_id", trackIds)
+    .abortSignal(supabaseTimeoutSignal());
   const existingSource = new Map<number, string>(
     (existingRows ?? []).map((r) => [r.track_id as number, r.source as string])
   );
@@ -120,29 +122,33 @@ async function main() {
     if (reviewsFetchOk && reviews.length > 0) {
       const { error: reviewsError } = await supabase
         .from("reviews")
-        .upsert(toReviewInsertRows(app.trackId, DEFAULT_COUNTRY, reviews), { onConflict: "id" });
+        .upsert(toReviewInsertRows(app.trackId, DEFAULT_COUNTRY, reviews), { onConflict: "id" })
+        .abortSignal(supabaseTimeoutSignal());
       if (reviewsError) {
         reviewsSavedOk = false;
         console.log(`  ${app.trackId} "${info.trackName}": reviews upsert FAILED (${reviewsError.message})`);
       }
     }
 
-    const { error: appError } = await supabase.from("apps").upsert(
-      {
-        track_id: app.trackId,
-        track_name: info.trackName,
-        artist_name: info.artistName ?? null,
-        artwork_url_100: info.artworkUrl100 ?? null,
-        primary_genre_name: info.primaryGenreName ?? null,
-        average_user_rating: info.averageUserRating ?? null,
-        user_rating_count: info.userRatingCount ?? null,
-        country: DEFAULT_COUNTRY,
-        source,
-        last_synced_at: reviewsSavedOk ? new Date().toISOString() : null,
-        reviews_confirmed_empty: reviewsSavedOk && reviews.length === 0,
-      },
-      { onConflict: "track_id" }
-    );
+    const { error: appError } = await supabase
+      .from("apps")
+      .upsert(
+        {
+          track_id: app.trackId,
+          track_name: info.trackName,
+          artist_name: info.artistName ?? null,
+          artwork_url_100: info.artworkUrl100 ?? null,
+          primary_genre_name: info.primaryGenreName ?? null,
+          average_user_rating: info.averageUserRating ?? null,
+          user_rating_count: info.userRatingCount ?? null,
+          country: DEFAULT_COUNTRY,
+          source,
+          last_synced_at: reviewsSavedOk ? new Date().toISOString() : null,
+          reviews_confirmed_empty: reviewsSavedOk && reviews.length === 0,
+        },
+        { onConflict: "track_id" }
+      )
+      .abortSignal(supabaseTimeoutSignal());
 
     if (appError) {
       console.log(`  ${app.trackId} "${info.trackName}": apps upsert FAILED (${appError.message})`);

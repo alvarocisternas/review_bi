@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabase } from "@/lib/supabase";
+import { supabaseTimeoutSignal } from "@/lib/supabaseTimeout";
 import { fetchReviewsLive, toReviewInsertRows } from "@/lib/reviews";
 import { lookupApps, AppLookupInfo } from "@/lib/appLookup";
 
@@ -114,7 +115,8 @@ async function runSync(request: NextRequest) {
     .select("track_id, country, track_name")
     .in("source", ["seed_carousel", "seed_category", "seed_guaranteed"])
     .order("last_synced_at", { ascending: true, nullsFirst: true })
-    .limit(FIXED_SET_BATCH_SIZE);
+    .limit(FIXED_SET_BATCH_SIZE)
+    .abortSignal(supabaseTimeoutSignal());
 
   if (fixedSelectError) {
     console.error("[sync-apps] Part A: failed to query fixed-set apps:", fixedSelectError.message);
@@ -172,7 +174,8 @@ async function runSync(request: NextRequest) {
         if (reviews.length > 0) {
           const { error: reviewsError } = await supabase
             .from("reviews")
-            .upsert(toReviewInsertRows(app.track_id, country, reviews), { onConflict: "id" });
+            .upsert(toReviewInsertRows(app.track_id, country, reviews), { onConflict: "id" })
+            .abortSignal(supabaseTimeoutSignal());
           if (reviewsError) {
             throw new Error(`reviews upsert failed: ${reviewsError.message}`);
           }
@@ -209,7 +212,8 @@ async function runSync(request: NextRequest) {
 
         const { error: appError } = await supabase
           .from("apps")
-          .upsert(appUpdate, { onConflict: "track_id" });
+          .upsert(appUpdate, { onConflict: "track_id" })
+          .abortSignal(supabaseTimeoutSignal());
         if (appError) {
           throw new Error(`apps upsert failed: ${appError.message}`);
         }
@@ -242,7 +246,8 @@ async function runSync(request: NextRequest) {
     .select("track_id, attempts")
     .lt("attempts", PENDING_MAX_ATTEMPTS)
     .order("requested_at", { ascending: true })
-    .limit(PENDING_BATCH_SAFETY_CAP);
+    .limit(PENDING_BATCH_SAFETY_CAP)
+    .abortSignal(supabaseTimeoutSignal());
 
   if (pendingSelectError) {
     console.error("[sync-apps] Part B: failed to query pending_apps:", pendingSelectError.message);
@@ -285,20 +290,23 @@ async function runSync(request: NextRequest) {
         // (null / false — "not yet confirmed synced"), and on a conflict
         // update PostgREST leaves columns absent from the payload
         // untouched, so this can never stomp a real value on a re-run.
-        const { error: appCreateError } = await supabase.from("apps").upsert(
-          {
-            track_id: pending.track_id,
-            track_name: info.trackName,
-            artist_name: info.artistName ?? null,
-            artwork_url_100: info.artworkUrl100 ?? null,
-            primary_genre_name: info.primaryGenreName ?? null,
-            average_user_rating: info.averageUserRating ?? null,
-            user_rating_count: info.userRatingCount ?? null,
-            country: DEFAULT_COUNTRY,
-            source: "organic",
-          },
-          { onConflict: "track_id" }
-        );
+        const { error: appCreateError } = await supabase
+          .from("apps")
+          .upsert(
+            {
+              track_id: pending.track_id,
+              track_name: info.trackName,
+              artist_name: info.artistName ?? null,
+              artwork_url_100: info.artworkUrl100 ?? null,
+              primary_genre_name: info.primaryGenreName ?? null,
+              average_user_rating: info.averageUserRating ?? null,
+              user_rating_count: info.userRatingCount ?? null,
+              country: DEFAULT_COUNTRY,
+              source: "organic",
+            },
+            { onConflict: "track_id" }
+          )
+          .abortSignal(supabaseTimeoutSignal());
         if (appCreateError) {
           throw new Error(`apps upsert failed: ${appCreateError.message}`);
         }
@@ -310,7 +318,8 @@ async function runSync(request: NextRequest) {
         if (reviews.length > 0) {
           const { error: reviewsError } = await supabase
             .from("reviews")
-            .upsert(toReviewInsertRows(pending.track_id, DEFAULT_COUNTRY, reviews), { onConflict: "id" });
+            .upsert(toReviewInsertRows(pending.track_id, DEFAULT_COUNTRY, reviews), { onConflict: "id" })
+            .abortSignal(supabaseTimeoutSignal());
           if (reviewsError) {
             throw new Error(`reviews upsert failed: ${reviewsError.message}`);
           }
@@ -327,7 +336,8 @@ async function runSync(request: NextRequest) {
             last_synced_at: new Date().toISOString(),
             reviews_confirmed_empty: reviews.length === 0,
           })
-          .eq("track_id", pending.track_id);
+          .eq("track_id", pending.track_id)
+          .abortSignal(supabaseTimeoutSignal());
         if (appError) {
           throw new Error(`apps update failed: ${appError.message}`);
         }
@@ -337,7 +347,8 @@ async function runSync(request: NextRequest) {
         const { error: deleteError } = await supabase
           .from("pending_apps")
           .delete()
-          .eq("track_id", pending.track_id);
+          .eq("track_id", pending.track_id)
+          .abortSignal(supabaseTimeoutSignal());
         if (deleteError) {
           throw new Error(`pending_apps delete failed: ${deleteError.message}`);
         }
@@ -352,7 +363,8 @@ async function runSync(request: NextRequest) {
         const { error: updateError } = await supabase
           .from("pending_apps")
           .update({ attempts: pending.attempts + 1, last_error: message })
-          .eq("track_id", pending.track_id);
+          .eq("track_id", pending.track_id)
+          .abortSignal(supabaseTimeoutSignal());
         if (updateError) {
           console.error(
             `[sync-apps] Part B: failed to record attempt for track_id=${pending.track_id}:`,

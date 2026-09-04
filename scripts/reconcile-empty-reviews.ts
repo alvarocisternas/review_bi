@@ -21,6 +21,7 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, resolve } from "node:path";
 import { createClient } from "@supabase/supabase-js";
+import { supabaseTimeoutSignal } from "../lib/supabaseTimeout";
 // fetchReviewsLive/toReviewInsertRows are imported dynamically inside
 // main() instead of statically here — see scripts/seed-initial.ts's
 // identical note for why (lib/reviews.ts pulls in lib/supabase.ts at
@@ -89,7 +90,8 @@ async function main() {
     .from("apps")
     .select("track_id, track_name, country")
     .not("last_synced_at", "is", null)
-    .not("reviews_confirmed_empty", "is", true);
+    .not("reviews_confirmed_empty", "is", true)
+    .abortSignal(supabaseTimeoutSignal());
 
   if (candidateError) {
     console.error("Failed to query candidate apps:", candidateError.message);
@@ -118,7 +120,8 @@ async function main() {
     const { data: page, error: pageError } = await supabase
       .from("reviews")
       .select("track_id")
-      .range(offset, offset + PAGE_SIZE - 1);
+      .range(offset, offset + PAGE_SIZE - 1)
+      .abortSignal(supabaseTimeoutSignal());
     if (pageError) {
       console.error(`Failed to page reviews at offset ${offset}:`, pageError.message);
       break;
@@ -153,7 +156,8 @@ async function main() {
       if (reviews.length > 0) {
         const { error: reviewsError } = await supabase
           .from("reviews")
-          .upsert(toReviewInsertRows(app.track_id, country, reviews), { onConflict: "id" });
+          .upsert(toReviewInsertRows(app.track_id, country, reviews), { onConflict: "id" })
+          .abortSignal(supabaseTimeoutSignal());
         if (reviewsError) {
           throw new Error(`reviews upsert failed: ${reviewsError.message}`);
         }
@@ -168,7 +172,8 @@ async function main() {
           last_synced_at: new Date().toISOString(),
           reviews_confirmed_empty: true,
         })
-        .eq("track_id", app.track_id);
+        .eq("track_id", app.track_id)
+        .abortSignal(supabaseTimeoutSignal());
       if (appError) {
         throw new Error(`apps update failed: ${appError.message}`);
       }

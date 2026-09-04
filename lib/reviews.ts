@@ -1,4 +1,5 @@
 import { supabase } from "@/lib/supabase";
+import { supabaseTimeoutSignal } from "@/lib/supabaseTimeout";
 
 // ALV-94: caps the outgoing RSS call so a hung iTunes response can't ride
 // a caller's serverless function to its own platform-level limit. Every
@@ -228,7 +229,8 @@ export async function fetchReviews(
   const { data: cachedRows, error: cacheError } = await supabase
     .from("reviews")
     .select("id, author, title, content, rating, review_date, app_version")
-    .eq("track_id", trackIdNum);
+    .eq("track_id", trackIdNum)
+    .abortSignal(supabaseTimeoutSignal());
 
   if (cacheError) {
     console.error(`[reviews] cache query failed for track_id=${trackId}:`, cacheError.message);
@@ -245,6 +247,10 @@ export async function fetchReviews(
     .from("apps")
     .select("track_id, reviews_confirmed_empty")
     .eq("track_id", trackIdNum)
+    // abortSignal() must precede maybeSingle() here: maybeSingle() narrows
+    // the builder's return type down to one that no longer exposes
+    // abortSignal(), so chaining it after would fail to type-check.
+    .abortSignal(supabaseTimeoutSignal())
     .maybeSingle();
 
   if (!appError && appRow && appRow.reviews_confirmed_empty === true) {
@@ -265,7 +271,8 @@ export async function fetchReviews(
     if (liveResult.reviews.length > 0) {
       const { error: reviewsError } = await supabase
         .from("reviews")
-        .upsert(toReviewInsertRows(trackIdNum, country, liveResult.reviews), { onConflict: "id" });
+        .upsert(toReviewInsertRows(trackIdNum, country, liveResult.reviews), { onConflict: "id" })
+        .abortSignal(supabaseTimeoutSignal());
       if (reviewsError) {
         reviewsSavedOk = false;
         console.error(`[reviews] Failed to save live-fetched reviews for track_id=${trackId}:`, reviewsError.message);
@@ -279,7 +286,8 @@ export async function fetchReviews(
           last_synced_at: new Date().toISOString(),
           reviews_confirmed_empty: liveResult.reviews.length === 0,
         })
-        .eq("track_id", trackIdNum);
+        .eq("track_id", trackIdNum)
+        .abortSignal(supabaseTimeoutSignal());
       if (updateError) {
         console.error(`[reviews] Failed to update apps for track_id=${trackId}:`, updateError.message);
       } else {
@@ -294,7 +302,8 @@ export async function fetchReviews(
   if (!savedNow) {
     const { error: pendingError } = await supabase
       .from("pending_apps")
-      .upsert({ track_id: trackIdNum }, { onConflict: "track_id" });
+      .upsert({ track_id: trackIdNum }, { onConflict: "track_id" })
+      .abortSignal(supabaseTimeoutSignal());
     if (pendingError) {
       console.error(`[reviews] Failed to queue track_id=${trackId} in pending_apps:`, pendingError.message);
     } else {

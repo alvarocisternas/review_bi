@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabase } from "@/lib/supabase";
+import { supabaseTimeoutSignal } from "@/lib/supabaseTimeout";
 
 interface ITunesRawResult {
   trackId: number;
@@ -85,11 +86,13 @@ export async function GET(request: NextRequest) {
     .select("track_id, track_name, artist_name, artwork_url_100, primary_genre_name, user_rating_count")
     .ilike("track_name", `%${escapeIlike(term)}%`)
     .order("user_rating_count", { ascending: false, nullsFirst: false })
-    .limit(RESULT_LIMIT);
+    .limit(RESULT_LIMIT)
+    .abortSignal(supabaseTimeoutSignal());
 
   if (cacheError) {
-    // Not fatal — degrade to the live-only path below, same as if the
-    // cache had simply found nothing.
+    // ALV-95: a timeout lands here too, indistinguishable from any other
+    // Supabase error — not fatal either way, degrade to the live-only path
+    // below, same as if the cache had simply found nothing.
     console.error("[search-app] Supabase cache query failed:", cacheError.message);
   } else {
     cacheResults = (cacheRows as AppsRow[]).map(toSimplifiedApp);
@@ -160,7 +163,8 @@ export async function GET(request: NextRequest) {
     const { data: existingRows, error: existingError } = await supabase
       .from("apps")
       .select("track_id")
-      .in("track_id", liveTrackIds);
+      .in("track_id", liveTrackIds)
+      .abortSignal(supabaseTimeoutSignal());
 
     if (existingError) {
       console.error("[search-app] Failed to check existing apps before upsert:", existingError.message);
@@ -169,19 +173,22 @@ export async function GET(request: NextRequest) {
       const newApps = liveResults.filter((r) => !existingIds.has(r.trackId));
 
       if (newApps.length > 0) {
-        const { error: insertError } = await supabase.from("apps").upsert(
-          newApps.map((app) => ({
-            track_id: app.trackId,
-            track_name: app.trackName,
-            artist_name: app.artistName || null,
-            artwork_url_100: app.artworkUrl100 || null,
-            primary_genre_name: app.primaryGenreName || null,
-            user_rating_count: app.userRatingCount,
-            country: "cl",
-            source: "organic",
-          })),
-          { onConflict: "track_id" }
-        );
+        const { error: insertError } = await supabase
+          .from("apps")
+          .upsert(
+            newApps.map((app) => ({
+              track_id: app.trackId,
+              track_name: app.trackName,
+              artist_name: app.artistName || null,
+              artwork_url_100: app.artworkUrl100 || null,
+              primary_genre_name: app.primaryGenreName || null,
+              user_rating_count: app.userRatingCount,
+              country: "cl",
+              source: "organic",
+            })),
+            { onConflict: "track_id" }
+          )
+          .abortSignal(supabaseTimeoutSignal());
         if (insertError) {
           console.error("[search-app] Failed to register new organic apps:", insertError.message);
         } else {

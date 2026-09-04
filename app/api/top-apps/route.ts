@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabase } from "@/lib/supabase";
+import { supabaseTimeoutSignal } from "@/lib/supabaseTimeout";
 import { GENRE_IDS } from "@/lib/genreIds";
 
 // Previously fetched the legacy top-free chart + a batched /lookup call
@@ -58,9 +59,14 @@ export async function GET(request: NextRequest) {
     .eq("primary_genre_name", genre)
     .in("source", ["seed_category", "seed_carousel"])
     .order("average_user_rating", { ascending: false, nullsFirst: false })
-    .limit(RESULT_COUNT);
+    .limit(RESULT_COUNT)
+    .abortSignal(supabaseTimeoutSignal());
 
   if (error) {
+    // ALV-95: a timeout lands here too (postgrest-js turns an aborted
+    // request into a normal {error} result, not a throw) — this endpoint
+    // has no fallback (it's a straight cache read), so a timeout gets the
+    // same controlled 502 as any other Supabase failure, never a hang.
     console.error("[top-apps] Supabase query failed:", error.message);
     return NextResponse.json(
       { error: "No se pudo obtener el top de apps para esta categoría" },
