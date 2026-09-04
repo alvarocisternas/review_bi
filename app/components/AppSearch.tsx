@@ -226,7 +226,27 @@ export default function AppSearch() {
   }
 
   function handleRemove(trackId: number) {
-    setSelectedApps((prev) => prev.filter((app) => app.trackId !== trackId));
+    const next = selectedApps.filter((app) => app.trackId !== trackId);
+    setSelectedApps(next);
+
+    // Removing the last selected app while in 'focused' mode is a real
+    // dead end otherwise: the "Apps seleccionadas" block (which holds the
+    // only "Nueva comparación" button) is gated on selectedApps.length > 0,
+    // and the search/category UI stays hidden until 'browse' — so the
+    // screen would render nothing at all, with analysisResult left
+    // orphaned in state. The stale result belongs to an app that was just
+    // actively removed, so it no longer makes sense to show it — treat
+    // this the same as clicking "Nueva comparación" (minus resetting the
+    // unrelated search/category state, which the user never touched here)
+    // so there's always something to do next. Going from N apps down to 1+
+    // is unaffected — this only fires on the removal that empties the
+    // selection.
+    if (next.length === 0 && mode === "focused") {
+      setMode("browse");
+      setAnalysisResult(null);
+      setAnalysisError(null);
+      setAnalysisLoading(false);
+    }
   }
 
   async function handleCategoryClick(category: string) {
