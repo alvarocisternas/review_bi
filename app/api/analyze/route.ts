@@ -136,6 +136,123 @@ const registrarAnalisisComparativoTool: Anthropic.Tool = {
   },
 };
 
+// Audit finding (ALV-93): tool_choice forcing Claude to call
+// "registrar_analisis"/"registrar_analisis_comparativo" makes it call the
+// tool, but nothing guarantees the resulting `input` actually matches the
+// input_schema declared above (a missing field, a wrong type, a null where
+// an array was required). Both dashboard components destructure `data`
+// directly with no defensive checks (e.g. `sentiment.score`,
+// `dimension.ranking[rankIndex].note`) and the app has no error.tsx
+// boundary anywhere — an unvalidated malformed shape reaching the frontend
+// would throw an uncaught TypeError at render time, which is exactly the
+// kind of raw technical failure this project's error handling exists to
+// prevent. These type guards run right after the tool_use block is found,
+// before it's ever returned to the client, so a malformed shape is treated
+// the same as "no tool_use block at all" — the existing, already-controlled
+// "No se pudo generar el análisis con Claude" 502.
+function isNonEmptyString(value: unknown): value is string {
+  return typeof value === "string";
+}
+
+function isStringArray(value: unknown): value is string[] {
+  return Array.isArray(value) && value.every(isNonEmptyString);
+}
+
+function isSingleAnalysisData(value: unknown): boolean {
+  if (!value || typeof value !== "object") return false;
+  const v = value as Record<string, unknown>;
+
+  const sentiment = v.sentiment as Record<string, unknown> | undefined;
+  const sentimentOk =
+    !!sentiment &&
+    typeof sentiment === "object" &&
+    ["positivo", "negativo", "mixto"].includes(sentiment.label as string) &&
+    typeof sentiment.score === "number" &&
+    Number.isFinite(sentiment.score) &&
+    isNonEmptyString(sentiment.justification);
+
+  return (
+    sentimentOk &&
+    isStringArray(v.recurring_complaints) &&
+    isStringArray(v.requested_features) &&
+    Array.isArray(v.highlighted_themes) &&
+    v.highlighted_themes.every(
+      (t) =>
+        !!t &&
+        typeof t === "object" &&
+        isNonEmptyString((t as Record<string, unknown>).theme) &&
+        isNonEmptyString((t as Record<string, unknown>).description)
+    )
+  );
+}
+
+function isComparativeAnalysisData(value: unknown): boolean {
+  if (!value || typeof value !== "object") return false;
+  const v = value as Record<string, unknown>;
+
+  const appsAnalyzedOk =
+    Array.isArray(v.apps_analyzed) &&
+    v.apps_analyzed.every((a) => {
+      const app = a as Record<string, unknown>;
+      return (
+        !!app &&
+        typeof app === "object" &&
+        typeof app.trackId === "number" &&
+        isNonEmptyString(app.appName) &&
+        typeof app.reviewCount === "number"
+      );
+    });
+
+  const dimensionRankingsOk =
+    Array.isArray(v.dimension_rankings) &&
+    v.dimension_rankings.every((d) => {
+      const dim = d as Record<string, unknown>;
+      return (
+        !!dim &&
+        typeof dim === "object" &&
+        isNonEmptyString(dim.dimension) &&
+        Array.isArray(dim.ranking) &&
+        dim.ranking.every((r) => {
+          const entry = r as Record<string, unknown>;
+          return (
+            !!entry &&
+            typeof entry === "object" &&
+            isNonEmptyString(entry.appName) &&
+            isNonEmptyString(entry.note)
+          );
+        })
+      );
+    });
+
+  const differentiatorsOk =
+    Array.isArray(v.differentiators) &&
+    v.differentiators.every((d) => {
+      const diff = d as Record<string, unknown>;
+      return (
+        !!diff &&
+        typeof diff === "object" &&
+        isNonEmptyString(diff.appName) &&
+        isNonEmptyString(diff.differentiator)
+      );
+    });
+
+  const conclusion = v.conclusion as Record<string, unknown> | undefined;
+  const conclusionOk =
+    !!conclusion &&
+    typeof conclusion === "object" &&
+    isNonEmptyString(conclusion.best_app) &&
+    isNonEmptyString(conclusion.reasoning);
+
+  return (
+    appsAnalyzedOk &&
+    isStringArray(v.sample_warnings) &&
+    dimensionRankingsOk &&
+    isStringArray(v.category_wide_complaints) &&
+    differentiatorsOk &&
+    conclusionOk
+  );
+}
+
 interface AnalyzeRequestBody {
   trackIds?: unknown;
   country?: string;
@@ -259,7 +376,11 @@ ${reviewsText}`;
       (block): block is Anthropic.ToolUseBlock => block.type === "tool_use"
     );
 
-    if (!toolUseBlock) {
+    if (!toolUseBlock || !isSingleAnalysisData(toolUseBlock.input)) {
+      console.error(
+        "[analyze] single mode: Claude's tool_use input didn't match the expected shape",
+        toolUseBlock ? JSON.stringify(toolUseBlock.input) : "(no tool_use block)"
+      );
       return NextResponse.json(
         { error: "No se pudo generar el análisis con Claude" },
         { status: 502 }
@@ -278,8 +399,12 @@ ${reviewsText}`;
   try {
     appNames = await lookupAppNames(trackIds, country);
   } catch {
+    // Audit finding (ALV-93): lookupAppNames calls the iTunes Lookup API,
+    // not the RSS reviews feed — this message named the wrong service
+    // (harmless to the end user, who only sees generic phrasing either
+    // way, but wrong for anyone debugging from the message itself).
     return NextResponse.json(
-      { error: "No se pudo conectar con iTunes RSS" },
+      { error: "No se pudo conectar con iTunes Lookup API" },
       { status: 502 }
     );
   }
@@ -397,7 +522,11 @@ ${reviewsBlocks}`;
     (block): block is Anthropic.ToolUseBlock => block.type === "tool_use"
   );
 
-  if (!toolUseBlock) {
+  if (!toolUseBlock || !isComparativeAnalysisData(toolUseBlock.input)) {
+    console.error(
+      "[analyze] comparative mode: Claude's tool_use input didn't match the expected shape",
+      toolUseBlock ? JSON.stringify(toolUseBlock.input) : "(no tool_use block)"
+    );
     return NextResponse.json(
       { error: "No se pudo generar el análisis con Claude" },
       { status: 502 }

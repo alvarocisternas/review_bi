@@ -61,7 +61,15 @@ export async function GET(request: NextRequest) {
   const term = request.nextUrl.searchParams.get("term")?.trim();
 
   if (!term) {
-    return NextResponse.json({ error: "term is required" }, { status: 400 });
+    // Not reachable from the app's own UI today (the search box only ever
+    // fires this fetch once the query is non-empty), but this is a public
+    // route — a direct/malformed call must still get a Spanish, controlled
+    // message like every other business-validation error in the project,
+    // not an English one (audit finding, ALV-93).
+    return NextResponse.json(
+      { error: "El parámetro term es obligatorio" },
+      { status: 400 }
+    );
   }
 
   // --- Step 1: try our own cache first -------------------------------
@@ -115,8 +123,15 @@ export async function GET(request: NextRequest) {
     );
   }
 
+  // Audit finding (ALV-93): a truthy resultCount with `results` missing or
+  // not an array — an unexpected-but-possible iTunes shape — used to throw
+  // straight through `data.results.length` uncaught, past this endpoint's
+  // own try/catch (which only wraps the fetch + .json() parse above). The
+  // frontend's fetchApi() happens to absorb that as a 500-with-empty-body
+  // and still shows the generic popup, but the server-side bug is real —
+  // guard the shape explicitly instead of relying on that safety net.
   const liveResults: SimplifiedApp[] =
-    !data.resultCount || data.results.length === 0
+    !data.resultCount || !Array.isArray(data.results) || data.results.length === 0
       ? []
       : data.results.map((item) => ({
           trackId: item.trackId,

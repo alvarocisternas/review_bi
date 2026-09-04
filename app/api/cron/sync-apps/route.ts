@@ -80,7 +80,7 @@ interface PendingAppRow {
   attempts: number;
 }
 
-export async function GET(request: NextRequest) {
+async function runSync(request: NextRequest) {
   const startedAt = Date.now();
   const elapsed = () => Date.now() - startedAt;
 
@@ -388,4 +388,29 @@ export async function GET(request: NextRequest) {
   console.log("[sync-apps] === Run finished ===", JSON.stringify(summary));
 
   return NextResponse.json(summary);
+}
+
+// Audit finding (ALV-93): every per-app failure inside Part A/B is already
+// caught locally (so one bad app never aborts the run), and every setup
+// query checks its own `error` instead of throwing — but nothing wrapped
+// runSync() as a whole. Cron monitoring depends on this endpoint always
+// responding with the structured summary JSON (or at least *some* JSON
+// with an `error` field); an exception escaping all of those local guards
+// (a genuine bug, an unexpected client-level throw) would otherwise fall
+// through to Next.js's default handling, which — confirmed during this
+// audit against a forced throw on another route — is a bare 500 with an
+// EMPTY body, not the JSON this endpoint's caller (and any monitoring
+// reading it) expects. This outer boundary is the last resort, not a
+// substitute for the specific handling already in place.
+export async function GET(request: NextRequest) {
+  try {
+    return await runSync(request);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    console.error("[sync-apps] Unhandled error — run aborted:", message);
+    return NextResponse.json(
+      { error: "sync-apps run failed unexpectedly", detail: message },
+      { status: 500 }
+    );
+  }
 }
