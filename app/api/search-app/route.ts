@@ -38,6 +38,12 @@ const RESULT_LIMIT = 10;
 // answer alone — fall back to a live search so the user still gets a
 // useful result list instead of just 1-2 matches.
 const MIN_CACHE_RESULTS = 3;
+// ALV-94: caps the live iTunes call so a hung upstream can't ride this
+// serverless function all the way to its own platform-level limit — a
+// stalled Apple request now fails fast into the existing try/catch below
+// (already a blanket catch, so this needs no new handling: a timeout
+// abort is just one more way for that fetch to fail).
+const UPSTREAM_TIMEOUT_MS = 10_000;
 
 // Escapes ILIKE's own wildcard characters in the user's raw search term,
 // so e.g. a literal "%" or "_" the user typed doesn't get interpreted as
@@ -106,7 +112,9 @@ export async function GET(request: NextRequest) {
 
   let data: ITunesSearchResponse;
   try {
-    const response = await fetch(url);
+    const response = await fetch(url, {
+      signal: AbortSignal.timeout(UPSTREAM_TIMEOUT_MS),
+    });
 
     if (!response.ok) {
       throw new Error(`iTunes API responded with status ${response.status}`);

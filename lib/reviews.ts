@@ -1,5 +1,13 @@
 import { supabase } from "@/lib/supabase";
 
+// ALV-94: caps the outgoing RSS call so a hung iTunes response can't ride
+// a caller's serverless function to its own platform-level limit. Every
+// caller of fetchReviewsLive already wraps it in a try/catch (or leaves it
+// uncaught to propagate to one that does — see fetchReviews below) — a
+// timeout is just another way for the fetch to fail, so this needs no new
+// error-classification anywhere it's called from.
+const UPSTREAM_TIMEOUT_MS = 10_000;
+
 interface RawEntry {
   // Apple's per-review permalink, e.g.
   // "https://itunes.apple.com/us/review?id=123&type=Purple%20Software" —
@@ -114,7 +122,9 @@ export async function fetchReviewsLive(
   // not because the omission was proven to be the root cause.
   const url = `https://itunes.apple.com/${country}/rss/customerreviews/id=${trackId}/page=${page}/sortby=mostrecent/json`;
 
-  const response = await fetch(url);
+  const response = await fetch(url, {
+    signal: AbortSignal.timeout(UPSTREAM_TIMEOUT_MS),
+  });
 
   if (!response.ok) {
     throw new Error(`iTunes RSS responded with status ${response.status}`);

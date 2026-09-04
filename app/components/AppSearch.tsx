@@ -49,6 +49,21 @@ const MIN_RATINGS_TO_COMPARE = 1;
 const API_ERROR_MESSAGE =
   "Existen problemas en la API que no podemos controlar. Inténtelo más tarde";
 
+// ALV-94: per-call client-side timeouts. None of these fire during normal
+// operation — they exist so a genuinely hung connection (dead wifi, a
+// cellular network that stalls mid-request) gets a controlled message from
+// the app instead of the browser's own native "stuck" behavior eventually
+// taking over. Search/categories are simple cache-first reads, so 10s is
+// already generous; analyze gets real headroom (45s) because a cold
+// trackId with no cache hit legitimately chains a live iTunes RSS fetch
+// *and* the Claude call, which alone can take 15-20s.
+const SEARCH_TIMEOUT_MS = 10_000;
+const TOP_APPS_TIMEOUT_MS = 10_000;
+const ANALYZE_TIMEOUT_MS = 45_000;
+
+const TIMEOUT_MESSAGE =
+  "Esto está tardando más de lo normal — revisa tu conexión e inténtalo de nuevo.";
+
 type FetchApiResult<T> =
   | { kind: "success"; data: T }
   | { kind: "business"; message: string }
@@ -96,6 +111,13 @@ export default function AppSearch() {
   // (400/422 with a known { error } message) never touch this; they keep
   // showing inline via the per-section error states above.
   const [apiError, setApiError] = useState<string | null>(null);
+  // Separate slot (ALV-94) for "our own client-side timeout fired before
+  // any response arrived" — a different cause (likely the user's
+  // connection) from apiError above (we got a response, and it was bad),
+  // so it gets its own message and its own visually-distinct modal
+  // variant. Rendered instead of apiError when both would otherwise be
+  // set, so only one full-screen modal ever shows at once.
+  const [timeoutError, setTimeoutError] = useState<string | null>(null);
 
   const hasQuery = term.trim().length >= MIN_QUERY_LENGTH;
   const isMaxReached = selectedApps.length >= MAX_SELECTED_APPS;
@@ -114,16 +136,61 @@ export default function AppSearch() {
   //   - A caller-driven AbortController (e.g. the search debounce
   //     cancelling a stale request on retype) -> "aborted", handled
   //     silently by the caller, never the popup.
+  //   - ALV-94: `timeoutMs` elapsing before a response ever arrives ->
+  //     the distinct timeout popup (setTimeoutError), never the "aborted"
+  //     result and never the infra popup — this request got NO response
+  //     at all, so it isn't "our infrastructure returned a bad answer",
+  //     it's "we gave up waiting". `init.signal`, when the caller passes
+  //     one (the search debounce, to cancel a stale request on retype),
+  //     is still honored — either it or the timeout can end the request,
+  //     but only the timeout firing shows this popup; an external abort
+  //     stays silent exactly like before.
   async function fetchApi<T>(
     input: string,
+    timeoutMs: number,
     init?: RequestInit
   ): Promise<FetchApiResult<T> | null> {
+    const internalController = new AbortController();
+    let timedOut = false;
+
+    const timeoutId = setTimeout(() => {
+      timedOut = true;
+      internalController.abort();
+    }, timeoutMs);
+
+    const externalSignal = init?.signal;
+    if (externalSignal) {
+      if (externalSignal.aborted) {
+        internalController.abort();
+      } else {
+        externalSignal.addEventListener(
+          "abort",
+          () => internalController.abort(),
+          { once: true }
+        );
+      }
+    }
+
+    // Shared by both catch blocks below: a real AbortError can come from
+    // the timeout above OR from the caller's own external signal — only
+    // the former is "the app gave up waiting" (the new timeout popup);
+    // the latter is a routine superseded-request cancellation, silent as
+    // it always was.
+    function classifyAbort(): FetchApiResult<T> | null {
+      if (timedOut) {
+        setTimeoutError(TIMEOUT_MESSAGE);
+        return null;
+      }
+      return { kind: "aborted" };
+    }
+
     let response: Response;
     try {
-      response = await fetch(input, init);
+      response = await fetch(input, { ...init, signal: internalController.signal });
     } catch (err) {
+      clearTimeout(timeoutId);
       if (err instanceof DOMException && err.name === "AbortError") {
-        return { kind: "aborted" };
+        return classifyAbort();
       }
       setApiError(API_ERROR_MESSAGE);
       return null;
@@ -131,11 +198,21 @@ export default function AppSearch() {
 
     let body: unknown;
     try {
+      // Not cleared yet: on a slow/stalling connection, fetch() can
+      // resolve (headers arrived) while the body is still trickling in —
+      // the same internalController/timeout still covers this .json()
+      // read, so a stall here also produces the timeout popup, not a
+      // hang.
       body = await response.json();
-    } catch {
+    } catch (err) {
+      clearTimeout(timeoutId);
+      if (err instanceof DOMException && err.name === "AbortError") {
+        return classifyAbort();
+      }
       setApiError(API_ERROR_MESSAGE);
       return null;
     }
+    clearTimeout(timeoutId);
 
     if (!response.ok) {
       if (response.status < 500 && isKnownErrorBody(body)) {
@@ -182,6 +259,7 @@ export default function AppSearch() {
 
       const result = await fetchApi<{ results: App[] }>(
         `/api/search-app?term=${encodeURIComponent(trimmed)}`,
+        SEARCH_TIMEOUT_MS,
         { signal: controller.signal }
       );
 
@@ -267,7 +345,8 @@ export default function AppSearch() {
     setCategoryResults(null);
 
     const result = await fetchApi<{ results: RankedApp[] }>(
-      `/api/top-apps?genre=${encodeURIComponent(category)}`
+      `/api/top-apps?genre=${encodeURIComponent(category)}`,
+      TOP_APPS_TIMEOUT_MS
     );
 
     // A different category was clicked (or this one was toggled off)
@@ -293,13 +372,17 @@ export default function AppSearch() {
     setAnalysisError(null);
     setAnalysisResult(null);
 
-    const result = await fetchApi<AnalyzeResponse>("/api/analyze", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        trackIds: selectedApps.map((app) => app.trackId),
-      }),
-    });
+    const result = await fetchApi<AnalyzeResponse>(
+      "/api/analyze",
+      ANALYZE_TIMEOUT_MS,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          trackIds: selectedApps.map((app) => app.trackId),
+        }),
+      }
+    );
 
     if (result?.kind === "success") {
       setAnalysisResult(result.data);
@@ -352,8 +435,19 @@ export default function AppSearch() {
 
   return (
     <div className="mx-auto w-full max-w-xl">
-      {apiError && (
-        <ApiErrorModal message={apiError} onClose={() => setApiError(null)} />
+      {/* At most one full-screen modal at a time: a timeout is the rarer,
+          more specific case, so it takes priority if somehow both fired
+          from unrelated in-flight requests. */}
+      {timeoutError ? (
+        <ApiErrorModal
+          variant="timeout"
+          message={timeoutError}
+          onClose={() => setTimeoutError(null)}
+        />
+      ) : (
+        apiError && (
+          <ApiErrorModal message={apiError} onClose={() => setApiError(null)} />
+        )
       )}
 
       {mode === "browse" && (

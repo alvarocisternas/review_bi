@@ -1,3 +1,10 @@
+// ALV-94: caps this outgoing call so a hung iTunes Lookup can't ride a
+// caller's serverless function to its own platform-level limit. Every
+// caller already wraps this in its own try/catch (or leaves it uncaught to
+// propagate to one that does) — a timeout is just another way for the
+// fetch below to fail, so this needs no new error-classification anywhere.
+const UPSTREAM_TIMEOUT_MS = 10_000;
+
 export interface AppLookupInfo {
   trackId: number;
   trackName: string;
@@ -50,7 +57,9 @@ export async function lookupApps(
   const countryParam = country ? `&country=${encodeURIComponent(country)}` : "";
   const url = `https://itunes.apple.com/lookup?id=${idsParam}${countryParam}`;
 
-  const response = await fetch(url);
+  const response = await fetch(url, {
+    signal: AbortSignal.timeout(UPSTREAM_TIMEOUT_MS),
+  });
 
   if (!response.ok) {
     throw new Error(`iTunes Lookup responded with status ${response.status}`);

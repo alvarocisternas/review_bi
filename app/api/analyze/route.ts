@@ -19,6 +19,13 @@ const MIN_REVIEWS_COMPARATIVE = 1;
 // Comparative mode only: included apps below this get flagged in
 // sample_warnings as low-confidence, but still enter the analysis.
 const LOW_REVIEW_THRESHOLD = 10;
+// ALV-94: caps the Claude call itself so a hung Anthropic request can't
+// ride this function to its own platform-level limit. 30s comfortably
+// covers the known-legitimate 15-20s case with real margin; a timeout
+// here throws (Anthropic.APIConnectionTimeoutError) into the exact same
+// try/catch that already handles every other Anthropic failure mode
+// (rate limit, 5xx, network error) below, so it needs no new handling.
+const ANTHROPIC_TIMEOUT_MS = 30_000;
 
 const registrarAnalisisTool: Anthropic.Tool = {
   name: "registrar_analisis",
@@ -357,13 +364,16 @@ ${reviewsText}`;
 
     let response;
     try {
-      response = await client.messages.create({
-        model: "claude-sonnet-5",
-        max_tokens: 2048,
-        tools: [registrarAnalisisTool],
-        tool_choice: { type: "tool", name: "registrar_analisis" },
-        messages: [{ role: "user", content: promptText }],
-      });
+      response = await client.messages.create(
+        {
+          model: "claude-sonnet-5",
+          max_tokens: 2048,
+          tools: [registrarAnalisisTool],
+          tool_choice: { type: "tool", name: "registrar_analisis" },
+          messages: [{ role: "user", content: promptText }],
+        },
+        { timeout: ANTHROPIC_TIMEOUT_MS }
+      );
     } catch (error) {
       console.error("Error calling Anthropic API:", error);
       return NextResponse.json(
@@ -503,13 +513,16 @@ ${reviewsBlocks}`;
 
   let response;
   try {
-    response = await client.messages.create({
-      model: "claude-sonnet-5",
-      max_tokens: 3584,
-      tools: [registrarAnalisisComparativoTool],
-      tool_choice: { type: "tool", name: "registrar_analisis_comparativo" },
-      messages: [{ role: "user", content: promptText }],
-    });
+    response = await client.messages.create(
+      {
+        model: "claude-sonnet-5",
+        max_tokens: 3584,
+        tools: [registrarAnalisisComparativoTool],
+        tool_choice: { type: "tool", name: "registrar_analisis_comparativo" },
+        messages: [{ role: "user", content: promptText }],
+      },
+      { timeout: ANTHROPIC_TIMEOUT_MS }
+    );
   } catch (error) {
     console.error("Error calling Anthropic API:", error);
     return NextResponse.json(
