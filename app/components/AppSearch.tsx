@@ -356,7 +356,9 @@ export default function AppSearch() {
           {showMixedCategoryWarning && (
             <p className="mb-3 rounded-md bg-yellow-100 px-3 py-2 text-xs text-yellow-900 dark:bg-yellow-900/30 dark:text-yellow-200">
               Estás comparando apps de categorías distintas:{" "}
-              {uniqueGenres.join(", ")}
+              {uniqueGenres
+                .map((genre) => GENRE_LABELS_ES[genre] ?? genre)
+                .join(", ")}
             </p>
           )}
 
@@ -531,7 +533,7 @@ export default function AppSearch() {
                               {app.trackName}
                             </p>
                             <span className="shrink-0 rounded-full bg-zinc-100 px-2 py-0.5 text-xs text-zinc-600 dark:bg-zinc-800 dark:text-zinc-400">
-                              {app.primaryGenreName}
+                              {GENRE_LABELS_ES[app.primaryGenreName] ?? app.primaryGenreName}
                             </span>
                           </div>
                           <p className="truncate text-xs text-zinc-500">
