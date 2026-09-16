@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabase } from "@/lib/supabase";
 import { supabaseTimeoutSignal } from "@/lib/supabaseTimeout";
-import { fetchReviewsLive, toReviewInsertRows } from "@/lib/reviews";
+import { fetchReviewsLive, toReviewInsertRows, countCachedReviews } from "@/lib/reviews";
 import { lookupApps, AppLookupInfo } from "@/lib/appLookup";
 
 // Vercel Hobby + Fluid Compute's hard ceiling is 300s; 280 leaves a 20s
@@ -181,10 +181,22 @@ async function runSync(request: NextRequest) {
           }
         }
 
+        // ALV-96: reviews_confirmed_empty must reflect the TRUE total
+        // cached count for this trackId, not just how many entries THIS
+        // run's live fetch returned — see countCachedReviews' doc comment
+        // for the exact failure this was silently causing on every refresh
+        // of an already-synced app (this was the root cause behind ~50% of
+        // the `apps` table ending up with the flag wrong). Thrown on
+        // failure -> caught below, counted as a Part A failure for this
+        // app, no write at all — same "never write on uncertain info"
+        // invariant as everything else here.
+        const cachedReviewCount = await countCachedReviews(app.track_id);
+
         // Only reached once the reviews above are safely saved (or there
-        // were none to save) — last_synced_at/reviews_confirmed_empty are
-        // ALV-85's fix, so they must only ever be written together with a
-        // confirmed-successful reviews step, never on their own.
+        // were none to save) and the true cached count is known —
+        // last_synced_at/reviews_confirmed_empty are ALV-85's fix, so they
+        // must only ever be written together with a confirmed-successful
+        // reviews step, never on their own.
         //
         // Partial merge-update — columns not included here are left
         // untouched by PostgREST's upsert on the conflict/update path.
@@ -201,7 +213,7 @@ async function runSync(request: NextRequest) {
           track_id: app.track_id,
           track_name: info?.trackName ?? app.track_name,
           last_synced_at: new Date().toISOString(),
-          reviews_confirmed_empty: reviews.length === 0,
+          reviews_confirmed_empty: cachedReviewCount === 0,
         };
         if (info?.averageUserRating != null) {
           appUpdate.average_user_rating = info.averageUserRating;
@@ -325,16 +337,24 @@ async function runSync(request: NextRequest) {
           }
         }
 
+        // ALV-96: same true-count fix as Part A — a brand-new onboarding
+        // has no prior reviews for this trackId, so reviews.length here
+        // would happen to already equal the true count in practice, but
+        // using countCachedReviews uniformly keeps every write site
+        // provably consistent instead of relying on that coincidence.
+        const cachedReviewCount = await countCachedReviews(pending.track_id);
+
         // Only reached once the reviews above are safely saved (or there
-        // were none) — same ALV-85 invariant as Part A: never mark
-        // last_synced_at/reviews_confirmed_empty until the save is
-        // actually confirmed. A plain update() (not upsert) so it only
-        // ever touches these two columns on the row created above.
+        // were none) and the true cached count is known — same ALV-85
+        // invariant as Part A: never mark last_synced_at/
+        // reviews_confirmed_empty until the save is actually confirmed. A
+        // plain update() (not upsert) so it only ever touches these two
+        // columns on the row created above.
         const { error: appError } = await supabase
           .from("apps")
           .update({
             last_synced_at: new Date().toISOString(),
-            reviews_confirmed_empty: reviews.length === 0,
+            reviews_confirmed_empty: cachedReviewCount === 0,
           })
           .eq("track_id", pending.track_id)
           .abortSignal(supabaseTimeoutSignal());

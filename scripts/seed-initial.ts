@@ -218,7 +218,7 @@ async function lookupUncached(trackIds: number[]): Promise<void> {
 async function main() {
   // Deferred dynamic import — see the note by the `import type { Review }`
   // line above for why this can't be a static top-of-file import.
-  const { fetchReviewsLive, toReviewInsertRows } = await import("../lib/reviews");
+  const { fetchReviewsLive, toReviewInsertRows, countCachedReviews } = await import("../lib/reviews");
 
   const startedAt = Date.now();
   console.log("=== seed-initial: started ===");
@@ -483,30 +483,47 @@ async function main() {
       }
     }
 
+    // ALV-96: reviews_confirmed_empty reflects the TRUE total cached
+    // count for this trackId (countCachedReviews), not just how many
+    // entries this run's fetch returned — see that function's doc comment
+    // for the exact corruption this was causing project-wide. A count
+    // failure is treated the same as any other failure below: skip the
+    // sync-status write entirely rather than guess.
+    let cachedReviewCount = -1;
+    if (reviewsSavedOk) {
+      try {
+        cachedReviewCount = await countCachedReviews(trackId);
+      } catch (err) {
+        reviewsSavedOk = false;
+        console.log(`  [${i + 1}/${toSync.length}] track_id=${trackId} "${trackName}": review count check FAILED (${errorMessage(err)})`);
+      }
+    }
+
     // Only reached once the reviews above are safely saved (or there were
-    // none) — a plain update() (not upsert) so it only ever touches these
-    // two columns on the row created above. Left untouched (i.e. this
-    // update is skipped) on a fetch-or-save failure, on purpose: the app
-    // still got its metadata seeded above, but its last_synced_at stays
-    // whatever it was (null for a brand-new row), so it sorts first for
-    // the regular cron's Part A to pick up and retry on its next run,
-    // instead of this script needing its own retry loop.
+    // none) and the true cached count is known — a plain update() (not
+    // upsert) so it only ever touches these two columns on the row created
+    // above. Left untouched (i.e. this update is skipped) on a fetch-or-
+    // save-or-count failure, on purpose: the app still got its metadata
+    // seeded above, but its last_synced_at stays whatever it was (null for
+    // a brand-new row), so it sorts first for the regular cron's Part A to
+    // pick up and retry on its next run, instead of this script needing
+    // its own retry loop.
     if (reviewsSavedOk) {
       const { error: syncError } = await supabase
         .from("apps")
         .update({
           last_synced_at: new Date().toISOString(),
-          reviews_confirmed_empty: reviews.length === 0,
+          reviews_confirmed_empty: cachedReviewCount === 0,
         })
         .eq("track_id", trackId)
         .abortSignal(supabaseTimeoutSignal());
       if (syncError) {
         console.log(`  [${i + 1}/${toSync.length}] track_id=${trackId} "${trackName}": apps sync-status update FAILED (${syncError.message})`);
       } else {
-        if (reviews.length === 0) {
+        if (cachedReviewCount === 0) {
           zeroReviewApps++;
         }
-        console.log(`  [${i + 1}/${toSync.length}] track_id=${trackId} "${trackName}" (${source}): OK, ${reviews.length} reviews`);
+        console.log(`  [${i + 1}/${toSync.length}] track_id=${trackId} "${trackName}" (${source}): OK, ${reviews.length} fetched, ${cachedReviewCount} cached total`);
       }
     }
 

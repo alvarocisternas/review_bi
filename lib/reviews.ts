@@ -92,6 +92,40 @@ export function toReviewInsertRows(trackId: number, country: string, reviews: Re
 }
 
 /**
+ * The TRUE total count of cached reviews for a trackId — the authoritative
+ * source for reviews_confirmed_empty (ALV-96). Every write site used to
+ * base that flag on `reviews.length` from a single live fetch — i.e. "how
+ * many entries did Apple's RSS return in THIS request" — not "does this
+ * app have ANY reviews cached, ever". For a REFRESH of an already-synced
+ * app (the cron's Part A, or reconcile-empty-reviews.ts recovering a
+ * previously-corrupt app), that's a real gap: a transient Apple glitch/
+ * rate-limit returning 0 entries on this one fetch got recorded as
+ * "confirmed empty", silently discarding the dozens of real reviews an
+ * earlier successful run already saved into this very table — the exact
+ * failure class ALV-85 was written to prevent, just recurring on every
+ * refresh instead of only the initial seed (confirmed in production:
+ * ~50% of the `apps` table ended up with this flag wrong before this fix).
+ * Every write site now asks the table directly instead of trusting a
+ * single fetch's size.
+ *
+ * Throws on a query failure rather than guessing, so callers preserve the
+ * ALV-85 invariant: never write reviews_confirmed_empty on incomplete
+ * information. Treat a thrown error here the same as any other failure in
+ * the call site's own error handling — skip the write, don't default it.
+ */
+export async function countCachedReviews(trackId: number): Promise<number> {
+  const { count, error } = await supabase
+    .from("reviews")
+    .select("*", { count: "exact", head: true })
+    .eq("track_id", trackId)
+    .abortSignal(supabaseTimeoutSignal());
+  if (error) {
+    throw new Error(`Failed to count cached reviews for track_id=${trackId}: ${error.message}`);
+  }
+  return count ?? 0;
+}
+
+/**
  * Fetches and parses reviews live from the iTunes customer reviews RSS
  * feed, unconditionally — no cache read at all.
  *
@@ -280,19 +314,35 @@ export async function fetchReviews(
     }
 
     if (reviewsSavedOk) {
-      const { error: updateError } = await supabase
-        .from("apps")
-        .update({
-          last_synced_at: new Date().toISOString(),
-          reviews_confirmed_empty: liveResult.reviews.length === 0,
-        })
-        .eq("track_id", trackIdNum)
-        .abortSignal(supabaseTimeoutSignal());
-      if (updateError) {
-        console.error(`[reviews] Failed to update apps for track_id=${trackId}:`, updateError.message);
-      } else {
-        savedNow = true;
-        console.log(`[reviews] track_id=${trackId} saved immediately (${liveResult.reviews.length} reviews)`);
+      // ALV-96: reviews_confirmed_empty reflects the true total cached
+      // count, not just how many entries this one fetch returned — see
+      // countCachedReviews' doc comment. A count-query failure here is
+      // treated the same as any other save failure: skip the write, fall
+      // through to the pending_apps queue below instead of guessing.
+      let cachedCount: number;
+      try {
+        cachedCount = await countCachedReviews(trackIdNum);
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        console.error(`[reviews] Failed to count cached reviews for track_id=${trackId}:`, message);
+        cachedCount = -1; // sentinel: never equals 0, so the write below is skipped
+      }
+
+      if (cachedCount >= 0) {
+        const { error: updateError } = await supabase
+          .from("apps")
+          .update({
+            last_synced_at: new Date().toISOString(),
+            reviews_confirmed_empty: cachedCount === 0,
+          })
+          .eq("track_id", trackIdNum)
+          .abortSignal(supabaseTimeoutSignal());
+        if (updateError) {
+          console.error(`[reviews] Failed to update apps for track_id=${trackId}:`, updateError.message);
+        } else {
+          savedNow = true;
+          console.log(`[reviews] track_id=${trackId} saved immediately (${liveResult.reviews.length} fetched, ${cachedCount} cached total)`);
+        }
       }
     }
   }

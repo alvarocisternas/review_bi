@@ -75,7 +75,7 @@ async function main() {
   // and evaluated before this script's own env-loading code ever runs
   // (confirmed the hard way — "supabaseUrl is required" on the first
   // run), so this must stay a runtime import, not a static one.
-  const { fetchReviewsLive, toReviewInsertRows } = await import("../lib/reviews");
+  const { fetchReviewsLive, toReviewInsertRows, countCachedReviews } = await import("../lib/reviews");
 
   console.log(`=== seed-guaranteed: syncing ${GUARANTEED_APPS.length} apps ===`);
 
@@ -130,6 +130,22 @@ async function main() {
       }
     }
 
+    // ALV-96: reviews_confirmed_empty reflects the TRUE total cached count
+    // (countCachedReviews), not just how many entries this run's fetch
+    // returned — see that function's doc comment. A count failure is
+    // treated the same as any other failure: reviewsSavedOk goes false,
+    // which already makes the upsert below leave last_synced_at/
+    // reviews_confirmed_empty unconfirmed (null / false).
+    let cachedReviewCount = -1;
+    if (reviewsSavedOk) {
+      try {
+        cachedReviewCount = await countCachedReviews(app.trackId);
+      } catch (err) {
+        reviewsSavedOk = false;
+        console.log(`  ${app.trackId} "${info.trackName}": review count check FAILED (${errorMessage(err)})`);
+      }
+    }
+
     const { error: appError } = await supabase
       .from("apps")
       .upsert(
@@ -144,7 +160,7 @@ async function main() {
           country: DEFAULT_COUNTRY,
           source,
           last_synced_at: reviewsSavedOk ? new Date().toISOString() : null,
-          reviews_confirmed_empty: reviewsSavedOk && reviews.length === 0,
+          reviews_confirmed_empty: reviewsSavedOk && cachedReviewCount === 0,
         },
         { onConflict: "track_id" }
       )

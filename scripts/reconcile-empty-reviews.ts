@@ -78,7 +78,7 @@ interface AppRow {
 }
 
 async function main() {
-  const { fetchReviewsLive, toReviewInsertRows } = await import("../lib/reviews");
+  const { fetchReviewsLive, toReviewInsertRows, countCachedReviews } = await import("../lib/reviews");
 
   console.log("=== reconcile-empty-reviews: started ===");
 
@@ -163,14 +163,26 @@ async function main() {
         }
       }
 
-      // Reached only once the reviews (if any) are safely saved — mirrors
-      // every other ALV-85-safe write site: reviews_confirmed_empty is
-      // only ever set together with a confirmed-successful fetch+save.
+      // ALV-96 fix: this used to hardcode reviews_confirmed_empty: true
+      // here unconditionally — a real bug, not just an instance of the
+      // same-class issue as the other write sites. Even in the "RECOVERED"
+      // branch below (reviews.length > 0, real reviews just found and
+      // saved), this write was still marking the app as confirmed-empty,
+      // directly contradicting the reviews it had just saved moments
+      // earlier and the "RECOVERED" log line right after it. Now uses the
+      // TRUE total cached count (countCachedReviews), same as every other
+      // write site — see that function's doc comment.
+      const cachedReviewCount = await countCachedReviews(app.track_id);
+
+      // Reached only once the reviews (if any) are safely saved and the
+      // true cached count is known — mirrors every other ALV-85-safe write
+      // site: reviews_confirmed_empty is only ever set together with a
+      // confirmed-successful fetch+save.
       const { error: appError } = await supabase
         .from("apps")
         .update({
           last_synced_at: new Date().toISOString(),
-          reviews_confirmed_empty: true,
+          reviews_confirmed_empty: cachedReviewCount === 0,
         })
         .eq("track_id", app.track_id)
         .abortSignal(supabaseTimeoutSignal());
