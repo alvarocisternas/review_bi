@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import AccordionSection from "./AccordionSection";
+import AppIcon from "./AppIcon";
 
 export interface AppAnalyzed {
   trackId: number;
@@ -107,16 +108,11 @@ export default function ComparativeDashboard({
                 className="flex w-16 flex-shrink-0 flex-col items-center"
               >
                 <div className="relative">
-                  {artworkUrl ? (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img
-                      src={artworkUrl}
-                      alt={app.appName}
-                      className="h-16 w-16 rounded-2xl"
-                    />
-                  ) : (
-                    <div className="h-16 w-16 rounded-2xl bg-zinc-200 dark:bg-zinc-700" />
-                  )}
+                  <AppIcon
+                    src={artworkUrl}
+                    name={app.appName}
+                    className="h-16 w-16 rounded-2xl"
+                  />
                   {hasWarning && (
                     <span
                       title={warnings.join(" ")}
@@ -273,14 +269,11 @@ export default function ComparativeDashboard({
       >
         <div className="rounded-lg border border-zinc-200 bg-zinc-50 p-4 dark:border-zinc-800 dark:bg-zinc-900">
           <div className="flex items-center gap-3">
-            {bestAppArtwork && (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img
-                src={bestAppArtwork}
-                alt={conclusion.best_app}
-                className="h-10 w-10 flex-shrink-0 rounded-xl"
-              />
-            )}
+            <AppIcon
+              src={bestAppArtwork}
+              name={conclusion.best_app}
+              className="h-10 w-10 flex-shrink-0 rounded-xl"
+            />
             <p className="text-base font-bold text-zinc-900 dark:text-zinc-100">
               {conclusion.best_app}
             </p>

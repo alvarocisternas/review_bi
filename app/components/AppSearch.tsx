@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import type { KeyboardEvent } from "react";
 import AnalysisDashboard, {
   SingleAnalysisData,
 } from "./AnalysisDashboard";
@@ -8,7 +9,9 @@ import ComparativeDashboard, {
   ComparativeAnalysisData,
 } from "./ComparativeDashboard";
 import ApiErrorModal from "./ApiErrorModal";
+import AppIcon from "./AppIcon";
 import { GENRE_IDS, GENRE_LABELS_ES } from "@/lib/genreIds";
+import { formatCount } from "@/lib/formatNumber";
 
 export interface App {
   trackId: number;
@@ -64,6 +67,22 @@ const ANALYZE_TIMEOUT_MS = 45_000;
 const TIMEOUT_MESSAGE =
   "Esto está tardando más de lo normal — revisa tu conexión e inténtalo de nuevo.";
 
+// ALV-84: the Claude call alone can take 15-20s (see ANALYZE_TIMEOUT_MS's
+// own comment) — a static "Analizando..." reads as stalled well before
+// that. Rotates through these on a timer while analysisLoading is true;
+// purely cosmetic; a report generated from cached data still uses the
+// same wording since there's no way to know a slow request's real phase.
+const ANALYSIS_MESSAGES = [
+  "Analizando...",
+  "Leyendo reseñas...",
+  "Detectando quejas y features...",
+  "Sintetizando hallazgos...",
+  "Casi listo...",
+];
+const ANALYSIS_MESSAGE_INTERVAL_MS = 3500;
+
+const EXPORT_PDF_TIMEOUT_MS = 30_000;
+
 type FetchApiResult<T> =
   | { kind: "success"; data: T }
   | { kind: "business"; message: string }
@@ -92,6 +111,10 @@ export default function AppSearch() {
   const [analysisResult, setAnalysisResult] = useState<AnalyzeResponse | null>(
     null
   );
+  const [analysisMessageIndex, setAnalysisMessageIndex] = useState(0);
+
+  const [exportLoading, setExportLoading] = useState(false);
+  const [exportError, setExportError] = useState<string | null>(null);
 
   const [showCategoryChips, setShowCategoryChips] = useState(false);
   const [activeCategory, setActiveCategory] = useState<string | null>(null);
@@ -225,6 +248,26 @@ export default function AppSearch() {
     return { kind: "success", data: body as T };
   }
 
+  // ALV-84: rotates the "Analizando..." caption while a real analysis is
+  // in flight (it can legitimately take 15-20s, per ANALYZE_TIMEOUT_MS's
+  // comment) so the wait doesn't read as stalled. The index itself is
+  // reset to 0 in handleAnalyze (right where analysisLoading is set to
+  // true), not here — setting state synchronously in an effect body just
+  // to "reset on false" triggers cascading renders the lint rule flags;
+  // driving the reset from the same event that starts loading is both
+  // simpler and avoids that. The interval clears on unmount or as soon as
+  // analysisLoading flips back to false (a normal finish or an early
+  // return via the popup paths).
+  useEffect(() => {
+    if (!analysisLoading) return;
+
+    const intervalId = setInterval(() => {
+      setAnalysisMessageIndex((prev) => (prev + 1) % ANALYSIS_MESSAGES.length);
+    }, ANALYSIS_MESSAGE_INTERVAL_MS);
+
+    return () => clearInterval(intervalId);
+  }, [analysisLoading]);
+
   function handleTermChange(value: string) {
     setTerm(value);
 
@@ -240,6 +283,44 @@ export default function AppSearch() {
     }
   }
 
+  // Holds the debounce effect's own in-flight timer/controller so
+  // handleSearchKeyDown (Enter) can cancel a pending debounced request
+  // before firing its own immediate one — otherwise both would resolve
+  // for the same term moments apart.
+  const pendingSearchTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(
+    null
+  );
+  const pendingSearchControllerRef = useRef<AbortController | null>(null);
+
+  // Actual search request, shared by the debounce effect below and by
+  // Enter (handleSearchKeyDown) — identical either way, just triggered on
+  // a different schedule.
+  const runSearch = useCallback(async (trimmed: string, signal: AbortSignal) => {
+    setLoading(true);
+    setError(null);
+
+    const result = await fetchApi<{ results: App[] }>(
+      `/api/search-app?term=${encodeURIComponent(trimmed)}`,
+      SEARCH_TIMEOUT_MS,
+      { signal }
+    );
+
+    if (!result || result.kind === "aborted") {
+      // Either the popup already fired (infra failure), or this request
+      // was cancelled because the user kept typing — nothing to show.
+      setLoading(false);
+      return;
+    }
+
+    if (result.kind === "business") {
+      setError(result.message);
+      setResults([]);
+    } else {
+      setResults(result.data.results);
+    }
+    setLoading(false);
+  }, []);
+
   // Debounced fetch: schedules the request 400ms after the user stops
   // typing. State updates happen inside the timeout/fetch callbacks, not
   // synchronously in the effect body, so a change in `term` only cancels
@@ -252,38 +333,41 @@ export default function AppSearch() {
     }
 
     const controller = new AbortController();
+    pendingSearchControllerRef.current = controller;
 
-    const timeoutId = setTimeout(async () => {
-      setLoading(true);
-      setError(null);
-
-      const result = await fetchApi<{ results: App[] }>(
-        `/api/search-app?term=${encodeURIComponent(trimmed)}`,
-        SEARCH_TIMEOUT_MS,
-        { signal: controller.signal }
-      );
-
-      if (!result || result.kind === "aborted") {
-        // Either the popup already fired (infra failure), or this request
-        // was cancelled because the user kept typing — nothing to show.
-        setLoading(false);
-        return;
-      }
-
-      if (result.kind === "business") {
-        setError(result.message);
-        setResults([]);
-      } else {
-        setResults(result.data.results);
-      }
-      setLoading(false);
+    const timeoutId = setTimeout(() => {
+      runSearch(trimmed, controller.signal);
     }, DEBOUNCE_MS);
+    pendingSearchTimeoutRef.current = timeoutId;
 
     return () => {
       clearTimeout(timeoutId);
       controller.abort();
     };
-  }, [term]);
+  }, [term, runSearch]);
+
+  // ALV-84: Enter runs the search immediately instead of waiting out the
+  // debounce — the input isn't inside a <form>, so without this handler
+  // Enter does nothing at all (never a stray form submit/page reload;
+  // there's no <form> to submit). Cancels the pending debounced request
+  // first so Enter doesn't leave a redundant duplicate in flight for the
+  // same term.
+  function handleSearchKeyDown(event: KeyboardEvent<HTMLInputElement>) {
+    if (event.key !== "Enter") return;
+    event.preventDefault();
+
+    const trimmed = term.trim();
+    if (trimmed.length < MIN_QUERY_LENGTH) return;
+
+    if (pendingSearchTimeoutRef.current) {
+      clearTimeout(pendingSearchTimeoutRef.current);
+    }
+    pendingSearchControllerRef.current?.abort();
+
+    const controller = new AbortController();
+    pendingSearchControllerRef.current = controller;
+    runSearch(trimmed, controller.signal);
+  }
 
   function handleAdd(app: App) {
     if (app.userRatingCount < MIN_RATINGS_TO_COMPARE) {
@@ -369,8 +453,10 @@ export default function AppSearch() {
   async function handleAnalyze() {
     setMode("focused");
     setAnalysisLoading(true);
+    setAnalysisMessageIndex(0);
     setAnalysisError(null);
     setAnalysisResult(null);
+    setExportError(null);
 
     const result = await fetchApi<AnalyzeResponse>(
       "/api/analyze",
@@ -394,6 +480,88 @@ export default function AppSearch() {
     setAnalysisLoading(false);
   }
 
+  // ALV-84: sends the current analysis result to /api/export-pdf and
+  // triggers a browser download of the returned PDF via a temporary
+  // blob-URL <a>. Doesn't go through the shared fetchApi() wrapper above —
+  // that helper always calls response.json(), which would throw on this
+  // endpoint's binary PDF body — so this handles the
+  // network/timeout/error-body cases directly, following the same
+  // business-vs-infra shape (a known { error } body renders inline here,
+  // same as analysisError; anything else gets a generic inline message —
+  // no full-screen popup, since a failed export isn't as disruptive as a
+  // failed analysis).
+  async function handleExportPdf() {
+    if (!analysisResult) return;
+
+    setExportError(null);
+    setExportLoading(true);
+
+    const payload =
+      analysisResult.mode === "single"
+        ? {
+            mode: "single" as const,
+            data: analysisResult.data,
+            appName: selectedApps[0]?.trackName ?? "App analizada",
+          }
+        : {
+            mode: "comparative" as const,
+            data: analysisResult.data,
+          };
+
+    const controller = new AbortController();
+    const timeoutId = setTimeout(
+      () => controller.abort(),
+      EXPORT_PDF_TIMEOUT_MS
+    );
+
+    let response: Response;
+    try {
+      response = await fetch("/api/export-pdf", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+        signal: controller.signal,
+      });
+    } catch {
+      clearTimeout(timeoutId);
+      setExportError("No se pudo generar el PDF. Inténtalo de nuevo.");
+      setExportLoading(false);
+      return;
+    }
+    clearTimeout(timeoutId);
+
+    if (!response.ok) {
+      let message = "No se pudo generar el PDF. Inténtalo de nuevo.";
+      try {
+        const body: unknown = await response.json();
+        if (isKnownErrorBody(body)) {
+          message = body.error;
+        }
+      } catch {
+        // Non-JSON error body — keep the generic message.
+      }
+      setExportError(message);
+      setExportLoading(false);
+      return;
+    }
+
+    const blob = await response.blob();
+    const disposition = response.headers.get("Content-Disposition") ?? "";
+    const filenameMatch = disposition.match(/filename="?([^"]+)"?/);
+    const filename = filenameMatch?.[1] ?? "analisis.pdf";
+
+    const blobUrl = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = blobUrl;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(blobUrl);
+
+    setExportLoading(false);
+  }
+
   // Explicit full reset for "start a new comparison from scratch". Editing
   // the current selection (add/remove/re-analyze) never triggers this —
   // only this button does, per the UX fix: search/category browsing on
@@ -405,6 +573,8 @@ export default function AppSearch() {
     setAnalysisResult(null);
     setAnalysisError(null);
     setAnalysisLoading(false);
+    setExportError(null);
+    setExportLoading(false);
 
     setTerm("");
     setResults([]);
@@ -451,14 +621,29 @@ export default function AppSearch() {
       )}
 
       {mode === "browse" && (
-        <input
-          ref={searchInputRef}
-          type="text"
-          value={term}
-          onChange={(e) => handleTermChange(e.target.value)}
-          placeholder="Buscar apps (ej. Spotify)"
-          className="w-full rounded-lg border border-zinc-300 px-4 py-2 text-sm text-zinc-900 focus:outline-none focus:ring-2 focus:ring-zinc-400 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100"
-        />
+        <>
+          <input
+            ref={searchInputRef}
+            type="text"
+            value={term}
+            onChange={(e) => handleTermChange(e.target.value)}
+            onKeyDown={handleSearchKeyDown}
+            placeholder="Buscar apps (ej. Spotify)"
+            className="w-full rounded-lg border border-zinc-300 px-4 py-2 text-sm text-zinc-900 focus:outline-none focus:ring-2 focus:ring-zinc-400 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100"
+          />
+
+          {/* ALV-84: initial-state guidance — only visible before the user
+              has done anything at all (no typing, no category browsing, no
+              selection yet). Disappears on the very first interaction with
+              any of those, never reappears afterward in this session. */}
+          {term.trim().length === 0 &&
+            !showCategoryChips &&
+            selectedApps.length === 0 && (
+              <p className="mt-2 text-xs text-zinc-400 dark:text-zinc-500">
+                Prueba con &quot;Santander&quot; o explora una categoría
+              </p>
+            )}
+        </>
       )}
 
       {selectedApps.length > 0 && (
@@ -488,17 +673,25 @@ export default function AppSearch() {
                 className="flex w-16 flex-shrink-0 flex-col items-center"
               >
                 <div className="relative">
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img
+                  <AppIcon
                     src={app.artworkUrl100}
-                    alt={app.trackName}
+                    name={app.trackName}
                     className="h-16 w-16 rounded-2xl"
                   />
+                  {/* ALV-84: visual size stays a small 20px badge (unchanged
+                      design), but the actual clickable/tappable area is
+                      expanded to ~44x44 via an invisible ::before pseudo-
+                      element — the standard "expand hit area without
+                      resizing the icon" technique. A pseudo-element
+                      generated by an absolutely-positioned element still
+                      positions relative to that element and is still part
+                      of it for click/tap purposes, so no extra wrapper or
+                      JS is needed. */}
                   <button
                     type="button"
                     onClick={() => handleRemove(app.trackId)}
                     aria-label={`Quitar ${app.trackName}`}
-                    className="absolute -right-1.5 -top-1.5 flex h-5 w-5 cursor-pointer items-center justify-center rounded-full bg-zinc-800 text-xs font-bold leading-none text-white ring-2 ring-white hover:bg-zinc-950 dark:ring-zinc-950"
+                    className="absolute -right-1.5 -top-1.5 flex h-5 w-5 cursor-pointer items-center justify-center rounded-full bg-zinc-800 text-xs font-bold leading-none text-white ring-2 ring-white before:absolute before:-inset-3 before:content-[''] hover:bg-zinc-950 dark:ring-zinc-950"
                   >
                     ×
                   </button>
@@ -535,7 +728,7 @@ export default function AppSearch() {
 
             {analysisLoading && (
               <p className="mt-2 text-sm text-zinc-500">
-                Analizando... esto puede tardar unos segundos
+                {ANALYSIS_MESSAGES[analysisMessageIndex]}
               </p>
             )}
 
@@ -544,20 +737,32 @@ export default function AppSearch() {
             )}
 
             {analysisResult && (
-              <div className="mb-3 flex justify-end">
+              <div className="mb-3 flex flex-col items-end gap-2">
                 {/* Same container treatment as "Analizar esta
                     app"/"Comparar" (padding, rounded-md, text-sm
-                    font-medium) so it reads as an equally clickable
-                    action — bordered/outlined instead of solid-filled to
-                    mark it as the secondary action next to that primary
-                    button. */}
-                <button
-                  type="button"
-                  onClick={handleNewComparison}
-                  className="rounded-md border border-zinc-300 bg-white px-4 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-100 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:bg-zinc-800"
-                >
-                  Nueva comparación
-                </button>
+                    font-medium) so both read as equally clickable actions —
+                    bordered/outlined instead of solid-filled to mark them
+                    as secondary next to that primary button. */}
+                <div className="flex flex-wrap justify-end gap-2">
+                  <button
+                    type="button"
+                    onClick={handleExportPdf}
+                    disabled={exportLoading}
+                    className="rounded-md border border-zinc-300 bg-white px-4 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-100 disabled:cursor-not-allowed disabled:opacity-60 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:bg-zinc-800"
+                  >
+                    {exportLoading ? "Generando PDF..." : "Exportar resultado"}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleNewComparison}
+                    className="rounded-md border border-zinc-300 bg-white px-4 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-100 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:bg-zinc-800"
+                  >
+                    Nueva comparación
+                  </button>
+                </div>
+                {exportError && (
+                  <p className="text-sm text-red-600">{exportError}</p>
+                )}
               </div>
             )}
 
@@ -635,10 +840,9 @@ export default function AppSearch() {
                         key={app.trackId}
                         className="flex items-center gap-3 py-3"
                       >
-                        {/* eslint-disable-next-line @next/next/no-img-element */}
-                        <img
+                        <AppIcon
                           src={app.artworkUrl100}
-                          alt={app.trackName}
+                          name={app.trackName}
                           className="h-10 w-10 flex-shrink-0 rounded-lg"
                         />
                         <div className="min-w-0 flex-1">
@@ -713,10 +917,9 @@ export default function AppSearch() {
                           key={app.trackId}
                           className="flex items-center gap-3 py-3"
                         >
-                          {/* eslint-disable-next-line @next/next/no-img-element */}
-                          <img
+                          <AppIcon
                             src={app.artworkUrl100}
-                            alt={app.trackName}
+                            name={app.trackName}
                             className="h-10 w-10 flex-shrink-0 rounded-lg"
                           />
                           <div className="min-w-0 flex-1">
@@ -727,10 +930,18 @@ export default function AppSearch() {
                               {app.artistName}
                             </p>
                           </div>
-                          <span className="shrink-0 text-sm text-zinc-600 dark:text-zinc-400">
-                            <span className="text-yellow-500">★</span>{" "}
-                            {app.averageUserRating.toFixed(2)}
-                          </span>
+                          {/* ALV-84: es-CL thousands separators on the
+                              rating count — Apple's raw counts easily run
+                              into the tens of thousands. */}
+                          <div className="shrink-0 text-right text-sm text-zinc-600 dark:text-zinc-400">
+                            <div>
+                              <span className="text-yellow-500">★</span>{" "}
+                              {app.averageUserRating.toFixed(2)}
+                            </div>
+                            <div className="text-xs text-zinc-400 dark:text-zinc-500">
+                              {formatCount(app.userRatingCount)} calif.
+                            </div>
+                          </div>
                           <button
                             type="button"
                             onClick={() =>

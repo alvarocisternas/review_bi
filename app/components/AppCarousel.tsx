@@ -1,6 +1,7 @@
 "use client";
 
 import { CAROUSEL_APPS } from "@/lib/carouselApps";
+import AppIcon from "./AppIcon";
 
 // Decorative logo strip above the search UI. Uses a fixed, curated list of
 // apps (see lib/carouselApps.ts) in a fixed, pre-shuffled order — no fetch
@@ -115,11 +116,11 @@ export default function AppCarousel() {
       >
         {[...CAROUSEL_APPS, ...CAROUSEL_APPS].map((app, index) => (
           // Decorative only — empty alt so screen readers skip these.
-          // eslint-disable-next-line @next/next/no-img-element
-          <img
+          <AppIcon
             key={`${app.trackId}-${index}`}
             src={app.artworkUrl100}
-            alt=""
+            name={app.name}
+            decorative
             className="h-12 w-12 flex-shrink-0 rounded-xl md:h-14 md:w-14"
           />
         ))}
